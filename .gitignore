@@ -45,3 +45,6 @@ frontend/playwright-report*.zip
 REFACTOR_CHANGELOG.md
 .worktrees/
 .leann/
+
+# PGO profiles are hardware-specific; users generate their own via `task benchmark-profile`
+default.pgo

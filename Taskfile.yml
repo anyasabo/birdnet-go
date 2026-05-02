@@ -23,7 +23,9 @@ vars:
     sh: uname -m
   # Common build flags
   CGO_FLAGS: CGO_ENABLED=1 CGO_CFLAGS="-I$HOME/src/tensorflow"
-  BUILD_FLAGS: -ldflags "-s -w -X 'main.buildDate={{.BUILD_DATE}}' -X 'main.version={{.VERSION}}'"
+  PGO_FLAG:
+    sh: '[ -f default.pgo ] && echo "-pgo=default.pgo" || echo ""'
+  BUILD_FLAGS: -ldflags "-s -w -X 'main.buildDate={{.BUILD_DATE}}' -X 'main.version={{.VERSION}}'" {{.PGO_FLAG}}
   # System paths
   SYSTEM_LIB_DIR_AMD64: /usr/lib
   SYSTEM_LIB_DIR_ARM64: /usr/aarch64-linux-gnu/lib
@@ -58,6 +60,24 @@ tasks:
       - go tool cover -html=coverage/coverage.out -o coverage/coverage.html
     vars:
       TEST_FLAGS: '{{default "" .CLI_ARGS}}'
+
+  benchmark-profile:
+    desc: >-
+      Capture a CPU profile for Profile-Guided Optimization (PGO).
+      Run on target hardware (e.g. Raspberry Pi) for best results.
+      Produces default.pgo which subsequent builds pick up automatically.
+    cmds:
+      - |
+        echo "Capturing CPU profile for PGO (60s benchmark run)..."
+        echo "For best results, run this on the target deployment hardware."
+        {{.CGO_FLAGS}} \
+        CGO_LDFLAGS="-L{{.SYSTEM_LIB_DIR_AMD64}} -ltensorflowlite_c" \
+        go test -tags noembed,skipfrontend -bench=. -benchtime=60s \
+          -cpuprofile=cpu.prof ./internal/analysis/ ./internal/audiocore/...
+        go tool pprof -proto cpu.prof > default.pgo
+        rm -f cpu.prof
+        echo "Profile written to default.pgo ($(wc -c < default.pgo) bytes)"
+        echo "Subsequent builds will use PGO automatically."
 
   # Go linting with CGO support for TensorFlow
   lint:
