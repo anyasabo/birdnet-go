@@ -48,6 +48,19 @@ tasks:
       - task: test
         vars: {CLI_ARGS: "-v"}
 
+  test-arm64:
+    desc: Run pure-Go tests under QEMU arm64 emulation (requires Docker)
+    vars:
+      GO_VER:
+        sh: grep '^go ' go.mod | awk '{print $2}' | cut -d. -f1,2
+    cmds:
+      - >-
+        docker run --rm --platform linux/arm64
+        -v {{.ROOT_DIR}}:/src -w /src
+        golang:{{.GO_VER}}
+        go test -tags noembed,skipfrontend -v -timeout 600s
+        ./internal/audiocore/... {{.CLI_ARGS}}
+
   # Task for running tests with coverage report
   test-coverage:
     desc: Run tests with coverage report

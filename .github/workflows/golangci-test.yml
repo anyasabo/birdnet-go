@@ -164,6 +164,40 @@ jobs:
           path: /tmp/gotest.log
           if-no-files-found: error
 
+  cross-arch-tests:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [arm64]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.arch }}
+
+      - name: Detect Go version from go.mod
+        id: goversion
+        run: |
+          GO_VER=$(grep '^go ' go.mod | awk '{print $2}' | cut -d. -f1,2)
+          echo "version=${GO_VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Run pure-Go tests on ${{ matrix.arch }}
+        run: |
+          docker run --rm --platform linux/${{ matrix.arch }} \
+            -v "${{ github.workspace }}":/src -w /src \
+            golang:${{ steps.goversion.outputs.version }} \
+            go test -tags noembed,skipfrontend -v -timeout 600s \
+              ./internal/audiocore/buffer/... \
+              ./internal/audiocore/convert/... \
+              ./internal/audiocore/equalizer/... \
+              ./internal/audiocore/resample/... \
+              ./internal/audiocore/schedule/... \
+              ./internal/audiocore/soundlevel/... \
+              ./internal/audiocore/readfile/...
+        timeout-minutes: 15
+
   testcontainer-tests:
     runs-on: ubuntu-24.04
     steps:
