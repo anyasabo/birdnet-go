@@ -62,6 +62,21 @@ tasks:
     vars:
       TEST_FLAGS: '{{default "" .CLI_ARGS}}'
 
+  # Build and run the benchmark with ONNX support.
+  # Requires MODEL_PATH and LABEL_PATH to point to an ONNX model and label file.
+  benchmark-onnx:
+    desc: Run BirdNET benchmark with ONNX backend
+    cmds:
+      - |
+        {{.CGO_FLAGS}} go run -tags noembed,skipfrontend,onnx ./main.go benchmark \
+          --birdnet.modelpath "{{.MODEL_PATH}}" \
+          --birdnet.labelpath "{{.LABEL_PATH}}" \
+          {{if .ONNX_RUNTIME_PATH}}--birdnet.onnxruntimepath "{{.ONNX_RUNTIME_PATH}}"{{end}}
+    vars:
+      MODEL_PATH: '{{default "" .MODEL_PATH}}'
+      LABEL_PATH: '{{default "" .LABEL_PATH}}'
+      ONNX_RUNTIME_PATH: '{{default "" .ONNX_RUNTIME_PATH}}'
+
   # Go linting with CGO support for TensorFlow
   lint:
     desc: Run golangci-lint with TensorFlow CGO flags
