@@ -10,11 +10,24 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Detect architecture
+      id: arch
+      shell: bash
+      run: |
+        case "${{ runner.arch }}" in
+          X64)   echo "tflite_arch=linux_amd64" >> "$GITHUB_OUTPUT"
+                 echo "lib_dir=/usr/lib" >> "$GITHUB_OUTPUT" ;;
+          ARM64) echo "tflite_arch=linux_arm64" >> "$GITHUB_OUTPUT"
+                 echo "lib_dir=/usr/aarch64-linux-gnu/lib" >> "$GITHUB_OUTPUT" ;;
+          *)     echo "::error::Unsupported runner architecture: ${{ runner.arch }}"
+                 exit 1 ;;
+        esac
+
     - name: Cache TensorFlow headers
       uses: actions/cache@v5
       with:
         path: ~/src/tensorflow
-        key: ${{ runner.os }}-tensorflow-${{ inputs.tflite-version }}
+        key: ${{ runner.os }}-${{ runner.arch }}-tensorflow-${{ inputs.tflite-version }}
 
     - name: Install Task
       uses: arduino/setup-task@v2
@@ -30,21 +43,33 @@ runs:
       id: cache-tflite
       uses: actions/cache@v5
       with:
-        path: /usr/lib/libtensorflowlite_c.so*
-        key: ${{ runner.os }}-tflite-${{ inputs.tflite-version }}
+        path: ${{ steps.arch.outputs.lib_dir }}/libtensorflowlite_c.so*
+        key: ${{ runner.os }}-${{ runner.arch }}-tflite-${{ inputs.tflite-version }}
 
     - name: Download tflite_c
       if: steps.cache-tflite.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        TFLITE_VERSION=${{ inputs.tflite-version }}
-        wget -q https://github.com/tphakala/tflite_c/releases/download/${TFLITE_VERSION}/tflite_c_${TFLITE_VERSION}_linux_amd64.tar.gz -P ./
-        tar -xzf tflite_c_${TFLITE_VERSION}_linux_amd64.tar.gz -C .
-        sudo mv libtensorflowlite_c.so.$(echo ${TFLITE_VERSION} | sed 's/^v//') /usr/lib/libtensorflowlite_c.so
-        rm -f tflite_c_${TFLITE_VERSION}_linux_amd64.tar.gz
+        set -euo pipefail
+        TFLITE_VERSION="${{ inputs.tflite-version }}"
+        TFLITE_ARCH="${{ steps.arch.outputs.tflite_arch }}"
+        LIB_DIR="${{ steps.arch.outputs.lib_dir }}"
+        VERSION_NUM="${TFLITE_VERSION#v}"
+
+        wget -q "https://github.com/tphakala/tflite_c/releases/download/${TFLITE_VERSION}/tflite_c_${TFLITE_VERSION}_${TFLITE_ARCH}.tar.gz" -P ./
+        tar -xzf "tflite_c_${TFLITE_VERSION}_${TFLITE_ARCH}.tar.gz" -C .
+
+        sudo mkdir -p "${LIB_DIR}"
+        sudo mv "libtensorflowlite_c.so.${VERSION_NUM}" "${LIB_DIR}/"
+        cd "${LIB_DIR}"
+        sudo ln -sf "libtensorflowlite_c.so.${VERSION_NUM}" libtensorflowlite_c.so.2
+        sudo ln -sf libtensorflowlite_c.so.2 libtensorflowlite_c.so
+
+        rm -f "tflite_c_${TFLITE_VERSION}_${TFLITE_ARCH}.tar.gz"
 
     - name: Set CGO environment variables
       shell: bash
       run: |
-        echo "CGO_ENABLED=1" >> $GITHUB_ENV
-        echo "CGO_CFLAGS=-I $HOME/src/tensorflow" >> $GITHUB_ENV
+        echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
+        echo "CGO_CFLAGS=-I $HOME/src/tensorflow" >> "$GITHUB_ENV"
+        echo "CGO_LDFLAGS=-L${{ steps.arch.outputs.lib_dir }} -ltensorflowlite_c" >> "$GITHUB_ENV"
