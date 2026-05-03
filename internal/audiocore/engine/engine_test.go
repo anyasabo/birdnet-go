@@ -291,3 +291,25 @@ func TestErrEngineStopped_IsSentinel(t *testing.T) {
 	assert.True(t, errors.Is(ErrEngineStopped, ErrEngineStopped))
 	assert.Contains(t, ErrEngineStopped.Error(), "stop requested")
 }
+
+// TestEngine_PrimaryAnalysisDimensions verifies that SetPrimaryAnalysisParams
+// overrides the default 48kHz/3s buffer dimensions.
+func TestEngine_PrimaryAnalysisDimensions(t *testing.T) {
+	t.Parallel()
+	eng, stop := newTestEngine(t)
+	defer stop()
+
+	// Before setting params, should return defaults (48kHz, 3s, mono, 16-bit).
+	cap, overlap, readSz := eng.primaryAnalysisDimensions()
+	assert.Equal(t, defaultAnalysisCapacity, cap)
+	assert.Equal(t, defaultAnalysisOverlap, overlap)
+	assert.Equal(t, defaultAnalysisReadSize, readSz)
+
+	// Set params for a 32kHz/5s model (BirdNET v3.0).
+	eng.SetPrimaryAnalysisParams(32000, 5)
+	cap, overlap, readSz = eng.primaryAnalysisDimensions()
+	// 32000 Hz * 5s * 1 channel * 2 bytes = 320000
+	assert.Equal(t, 320000, cap)
+	assert.Equal(t, 160000, overlap)
+	assert.Equal(t, 160000, readSz)
+}

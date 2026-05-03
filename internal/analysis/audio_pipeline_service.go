@@ -131,9 +131,12 @@ func (p *AudioPipelineService) Start(_ context.Context) error {
 	dataStore := p.dbService.DataStore()
 	metrics := p.apiService.Metrics()
 
-	// Set the primary model ID on the engine so that analysis buffers are
-	// allocated with the correct model key instead of a hardcoded constant.
+	// Set the primary model ID and buffer dimensions on the engine so that
+	// analysis buffers match the model's sample rate and clip length.
 	p.engine.SetPrimaryModelID(bn.ModelInfo.ID)
+	if s := bn.ModelInfo.Spec; s.SampleRate > 0 && s.ClipLength > 0 {
+		p.engine.SetPrimaryAnalysisParams(s.SampleRate, int(s.ClipLength.Seconds()))
+	}
 
 	// Register all loaded models in the ai_models database table so they
 	// appear even before any detections are saved.

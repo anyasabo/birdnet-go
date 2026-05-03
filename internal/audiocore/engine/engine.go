@@ -137,6 +137,11 @@ type AudioEngine struct {
 	// primaryModelID is the model identifier used when allocating analysis
 	// buffers. Set via SetPrimaryModelID before adding sources.
 	primaryModelID string
+	// primaryAnalysis* override the default 48kHz/3s buffer dimensions.
+	// Set via SetPrimaryAnalysisParams; zero values mean "use defaults".
+	primaryAnalysisCapacity int
+	primaryAnalysisOverlap  int
+	primaryAnalysisReadSize int
 	// ffmpegPath is the absolute path to the FFmpeg binary.
 	ffmpegPath string
 	// soxPath is the absolute path to the SoX binary.
@@ -249,6 +254,28 @@ func (e *AudioEngine) PrimaryModelID() string {
 	return e.primaryModelID
 }
 
+// SetPrimaryAnalysisParams overrides the default analysis buffer dimensions
+// for the primary model. sampleRate is the model's target sample rate (Hz),
+// clipLengthSec is the analysis window in seconds. When set, AddSource and
+// ReconfigureSource use these instead of the 48kHz/3s defaults.
+func (e *AudioEngine) SetPrimaryAnalysisParams(sampleRate, clipLengthSec int) {
+	capacity := sampleRate * clipLengthSec * conf.NumChannels * (conf.BitDepth / 8)
+	overlap := capacity / 2
+	readSize := capacity - overlap
+	e.primaryAnalysisCapacity = capacity
+	e.primaryAnalysisOverlap = overlap
+	e.primaryAnalysisReadSize = readSize
+}
+
+// primaryAnalysisDimensions returns the buffer dimensions for the primary model,
+// falling back to hardcoded defaults when SetPrimaryAnalysisParams has not been called.
+func (e *AudioEngine) primaryAnalysisDimensions() (capacity, overlap, readSize int) {
+	if e.primaryAnalysisCapacity > 0 {
+		return e.primaryAnalysisCapacity, e.primaryAnalysisOverlap, e.primaryAnalysisReadSize
+	}
+	return defaultAnalysisCapacity, defaultAnalysisOverlap, defaultAnalysisReadSize
+}
+
 // AddSource registers a new audio source and allocates its buffers.
 // For stream-type sources (RTSP, HTTP, HLS, RTMP, UDP), the FFmpeg manager
 // is started. For audio card sources, the device manager begins capture.
@@ -268,12 +295,13 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 	sourceID := src.ID
 
 	// 2. Allocate analysis buffer.
+	cap, overlap, readSz := e.primaryAnalysisDimensions()
 	if err := e.bufferMgr.AllocateAnalysis(
 		sourceID,
 		e.primaryModelID,
-		defaultAnalysisCapacity,
-		defaultAnalysisOverlap,
-		defaultAnalysisReadSize,
+		cap,
+		overlap,
+		readSz,
 	); err != nil {
 		return errors.New(err).
 			Component("audiocore.engine").
@@ -429,12 +457,13 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 	if sampleRate <= 0 {
 		sampleRate = defaultSampleRate
 	}
+	reCap, reOverlap, reReadSz := e.primaryAnalysisDimensions()
 	if err := e.bufferMgr.AllocateAnalysis(
 		sourceID,
 		e.primaryModelID,
-		defaultAnalysisCapacity,
-		defaultAnalysisOverlap,
-		defaultAnalysisReadSize,
+		reCap,
+		reOverlap,
+		reReadSz,
 	); err != nil {
 		return errors.New(err).
 			Component("audiocore.engine").

@@ -251,8 +251,12 @@ func ProcessData(ctx context.Context, bn *classifier.Orchestrator, bufMgr *buffe
 	// Get the current settings
 	settings := conf.Setting()
 
-	// Calculate the effective buffer duration
-	bufferDuration := 3 * time.Second // base duration
+	// Derive the base buffer duration from the model's clip length,
+	// falling back to 3s for legacy models without a registry entry.
+	bufferDuration := 3 * time.Second
+	if spec, ok := classifier.GetModelSpec(modelID); ok {
+		bufferDuration = spec.ClipLength
+	}
 	overlapDuration := time.Duration(settings.BirdNET.Overlap * float64(time.Second))
 	effectiveBufferDuration := bufferDuration - overlapDuration
 
