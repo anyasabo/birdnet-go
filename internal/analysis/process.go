@@ -26,6 +26,15 @@ var (
 	processMetrics      *metrics.MyAudioMetrics // Global metrics instance for audio processing operations
 	processMetricsMutex sync.RWMutex            // Mutex for thread-safe access to processMetrics
 	processMetricsOnce  sync.Once               // Ensures metrics are only set once
+
+	// pcmCopyPool amortizes the per-window PCM allocation in ProcessData.
+	// Buffers escape to the results queue and are retained by downstream
+	// consumers (pending detections, BirdWeather) for variable durations.
+	// sync.Pool handles this gracefully: unreturned entries are GC'd,
+	// while returned entries avoid re-allocation on subsequent windows.
+	pcmCopyPool = sync.Pool{
+		New: func() any { return make([]byte, 0, conf.BufferSize) },
+	}
 )
 
 const (
@@ -289,7 +298,18 @@ func ProcessData(ctx context.Context, bn *classifier.Orchestrator, bufMgr *buffe
 	// filter evaluation and clip export, which outlive ProcessData. Without
 	// this copy a subsequent Read could hand the same backing array to a new
 	// caller while the consumer goroutine is still reading from it.
-	pcmCopy := make([]byte, len(data))
+	//
+	// pcmCopyPool amortizes the allocation: on pool hit we reuse a
+	// previously returned buffer instead of asking the allocator for ~289KB.
+	// Downstream consumers that hold PCMdata longer than one cycle (e.g.
+	// BirdWeather retries) simply prevent that buffer from being pooled
+	// until GC reclaims it -- sync.Pool tolerates this by design.
+	pcmCopy := pcmCopyPool.Get().([]byte) //nolint:forcetypeassert // pool.New always returns []byte
+	if cap(pcmCopy) < len(data) {
+		pcmCopy = make([]byte, len(data))
+	} else {
+		pcmCopy = pcmCopy[:len(data)]
+	}
 	copy(pcmCopy, data)
 
 	// Create a Results message to be sent through queue to processor
