@@ -26,8 +26,9 @@ type TFLiteClassifierOptions struct {
 
 // tfliteClassifier implements Classifier using a TensorFlow Lite interpreter.
 type tfliteClassifier struct {
-	interpreter *tflitelib.Interpreter
-	numSpecies  int
+	interpreter      *tflitelib.Interpreter
+	numSpecies       int
+	predictionBuffer []float32 // reused across Predict calls to avoid per-inference allocation
 }
 
 // NewTFLiteClassifier creates a Classifier backed by a TensorFlow Lite model.
@@ -84,8 +85,9 @@ func NewTFLiteClassifier(modelData []byte, opts TFLiteClassifierOptions) (infere
 	runtime.GC()
 
 	return &tfliteClassifier{
-		interpreter: interpreter,
-		numSpecies:  numSpecies,
+		interpreter:      interpreter,
+		numSpecies:       numSpecies,
+		predictionBuffer: make([]float32, numSpecies),
 	}, threads, nil
 }
 
@@ -110,10 +112,9 @@ func (c *tfliteClassifier) Predict(samples []float32) ([]float32, error) {
 	if outputTensor == nil {
 		return nil, fmt.Errorf("cannot get output tensor")
 	}
-	predictions := make([]float32, c.numSpecies)
-	copy(predictions, outputTensor.Float32s()[:c.numSpecies])
+	copy(c.predictionBuffer, outputTensor.Float32s()[:c.numSpecies])
 
-	return predictions, nil
+	return c.predictionBuffer, nil
 }
 
 // NumSpecies returns the number of species in the model output.
