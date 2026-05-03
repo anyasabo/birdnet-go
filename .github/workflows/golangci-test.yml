@@ -165,6 +165,31 @@ jobs:
           path: /tmp/gotest.log
           if-no-files-found: error
 
+  onnx-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Setup TensorFlow Lite
+        uses: ./.github/actions/setup-tensorflow
+
+      - name: Setup ONNX Runtime
+        uses: ./.github/actions/setup-onnxruntime
+
+      - name: Run ONNX unit tests
+        env:
+          CI: true
+        run: |
+          set -euo pipefail
+          go test -tags noembed,skipfrontend,onnx -v -short -timeout 120s \
+            ./internal/inference/onnx/... \
+            2>&1
+        timeout-minutes: 5
+
   testcontainer-tests:
     runs-on: ubuntu-24.04
     steps:

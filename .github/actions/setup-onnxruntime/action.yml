@@ -1,0 +1,45 @@
+name: 'Setup ONNX Runtime'
+description: 'Download and cache ONNX Runtime shared library for testing'
+
+inputs:
+  onnxruntime-version:
+    description: 'ONNX Runtime version'
+    required: false
+    default: '1.24.4'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache ONNX Runtime library
+      id: cache-ort
+      uses: actions/cache@v5
+      with:
+        path: /usr/lib/libonnxruntime*
+        key: ${{ runner.os }}-${{ runner.arch }}-ort-${{ inputs.onnxruntime-version }}
+
+    - name: Download ONNX Runtime
+      if: steps.cache-ort.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        ORT_VERSION="${{ inputs.onnxruntime-version }}"
+        case "$(uname -m)" in
+          x86_64)  ARCH="x64" ;;
+          aarch64) ARCH="aarch64" ;;
+          *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-${ARCH}-${ORT_VERSION}.tgz" \
+          -o /tmp/onnxruntime.tgz
+        mkdir -p /tmp/onnxruntime
+        tar -xzf /tmp/onnxruntime.tgz -C /tmp/onnxruntime --strip-components=1
+        sudo cp /tmp/onnxruntime/lib/libonnxruntime*.so* /usr/lib/
+        sudo ldconfig
+        rm -rf /tmp/onnxruntime /tmp/onnxruntime.tgz
+
+    - name: Verify library is loadable
+      shell: bash
+      run: ldconfig -p | grep onnxruntime
+
+    - name: Set ONNX Runtime path for tests
+      shell: bash
+      run: echo "ONNX_RUNTIME_PATH=/usr/lib/libonnxruntime.so" >> "$GITHUB_ENV"

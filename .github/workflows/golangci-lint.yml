@@ -32,14 +32,8 @@ jobs:
         id: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          # Require: The version of golangci-lint to use.
-          # When `install-mode` is `binary` (default) the value can be v1.2 or v1.2.3 or `latest` to use the latest version.
-          # When `install-mode` is `goinstall` the value can be v1.2.3, `latest`, or the hash of a commit.
           version: v2.10.1
-          # Show only new issues by default
           only-new-issues: false
-          # Additional args for better output (v2.5.0+ syntax)
-          # Use noembed,skipfrontend tags to skip model and frontend embedding requirement
           args: --build-tags=noembed,skipfrontend --output.checkstyle.path=golangci-lint-report.xml
 
       - name: Generate lint summary
@@ -91,4 +85,34 @@ jobs:
         with:
           name: golangci-lint-report
           path: golangci-lint-report.xml
+          if-no-files-found: ignore
+
+  golangci-onnx:
+    name: lint-onnx
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go version
+
+      - name: Setup TensorFlow Lite
+        uses: ./.github/actions/setup-tensorflow
+
+      - name: golangci-lint (ONNX)
+        id: golangci-lint-onnx
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.10.1
+          only-new-issues: false
+          args: --build-tags=noembed,skipfrontend,onnx --output.checkstyle.path=golangci-lint-onnx-report.xml
+
+      - name: Upload ONNX lint report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: golangci-lint-onnx-report
+          path: golangci-lint-onnx-report.xml
           if-no-files-found: ignore
