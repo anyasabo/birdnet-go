@@ -21,88 +21,79 @@ func Command(settings *conf.Settings) *cobra.Command {
 }
 
 func runBenchmark(settings *conf.Settings) error {
-	var xnnpackResults, standardResults benchmarkResults
-
-	// First run with XNNPACK
-	fmt.Println("🚀 Testing with XNNPACK delegate:")
-	settings.BirdNET.UseXNNPACK = true
-	if err := runInferenceBenchmark(settings, &xnnpackResults); err != nil {
-		fmt.Printf("❌ XNNPACK benchmark failed: %v\n", err)
-	}
-
-	// Then run without XNNPACK
-	fmt.Println("\n🐌 Testing standard CPU inference:")
-	settings.BirdNET.UseXNNPACK = false
-	if err := runInferenceBenchmark(settings, &standardResults); err != nil {
-		return fmt.Errorf("❌ standard CPU inference benchmark failed: %w", err)
-	}
-
-	// Show detailed performance comparison
-	fmt.Printf("Results:\n")
-	fmt.Printf("Method         Inference Time   Throughput\n")
-	fmt.Printf("─────────────  ───────────────  ──────────────────────\n")
-
-	// Show Standard results if available
-	if standardResults.totalInferences > 0 {
-		fmt.Printf("Standard       %6.1f ms         %6.2f inferences/sec\n",
-			float64(standardResults.avgTime.Milliseconds()),
-			standardResults.inferencesPerSecond)
-	} else {
-		fmt.Printf("Standard       ❌ Failed\n")
-	}
-
-	// Show XNNPACK results if available
-	if xnnpackResults.totalInferences > 0 {
-		fmt.Printf("XNNPACK        %6.1f ms         %6.2f inferences/sec\n",
-			float64(xnnpackResults.avgTime.Milliseconds()),
-			xnnpackResults.inferencesPerSecond)
-	} else {
-		fmt.Printf("XNNPACK        ❌ Failed\n")
-	}
-	fmt.Printf("─────────────  ───────────────  ──────────────────────\n")
-
-	// Only show comparison if both tests succeeded
-	if xnnpackResults.totalInferences > 0 && standardResults.totalInferences > 0 {
-		speedImprovement := (float64(standardResults.avgTime.Milliseconds()) -
-			float64(xnnpackResults.avgTime.Milliseconds())) /
-			float64(standardResults.avgTime.Milliseconds()) * 100
-
-		fmt.Printf("\n🚀 Speed improvement with XNNPACK: %.1f%%\n", speedImprovement)
-
-		// Add performance assessment based on XNNPACK results
-		rating, description := getPerformanceRating(float64(xnnpackResults.avgTime.Milliseconds()))
-		fmt.Printf("System Rating: %s, %s\n", rating, description)
-	}
-
-	return nil
-}
-
-// Add this struct to store benchmark results
-type benchmarkResults struct {
-	totalInferences     int
-	avgTime             time.Duration
-	inferencesPerSecond float64
-}
-
-func runInferenceBenchmark(settings *conf.Settings, results *benchmarkResults) error {
-	// Initialize BirdNET
+	// Initialize orchestrator to resolve the active model and its spec.
 	bn, err := classifier.NewOrchestrator(settings)
 	if err != nil {
 		return fmt.Errorf("failed to initialize BirdNET: %w", err)
 	}
 	defer bn.Delete()
 
-	// Generate 3 seconds of silent audio (48000 * 3 samples)
-	sampleSize := 48000 * 3
+	spec := bn.ModelInfo.Spec
+	sampleSize := spec.SampleRate * int(spec.ClipLength.Seconds())
+	clipDuration := spec.ClipLength
+
+	fmt.Printf("Model: %s (%s)\n", bn.ModelInfo.Name, bn.ModelInfo.Backend)
+	fmt.Printf("Audio: %d Hz, %v clips (%d samples)\n\n", spec.SampleRate, clipDuration, sampleSize)
+
+	isONNX := bn.ModelInfo.Backend == classifier.BackendONNX
+
+	if isONNX {
+		// ONNX models don't use XNNPACK -- run a single benchmark.
+		var results benchmarkResults
+		fmt.Println("Running ONNX inference benchmark...")
+		if err := runInferenceBenchmark(bn, sampleSize, clipDuration, &results); err != nil {
+			return fmt.Errorf("ONNX benchmark failed: %w", err)
+		}
+		printSingleResult("ONNX", &results, clipDuration)
+	} else {
+		// TFLite: compare XNNPACK vs standard CPU.
+		var xnnpackResults, standardResults benchmarkResults
+
+		fmt.Println("Testing with XNNPACK delegate:")
+		settings.BirdNET.UseXNNPACK = true
+		// Re-create orchestrator with XNNPACK enabled.
+		bn.Delete()
+		bn, err = classifier.NewOrchestrator(settings)
+		if err != nil {
+			fmt.Printf("XNNPACK benchmark failed: %v\n", err)
+		} else {
+			if err := runInferenceBenchmark(bn, sampleSize, clipDuration, &xnnpackResults); err != nil {
+				fmt.Printf("XNNPACK benchmark failed: %v\n", err)
+			}
+			bn.Delete()
+		}
+
+		fmt.Println("\nTesting standard CPU inference:")
+		settings.BirdNET.UseXNNPACK = false
+		bn, err = classifier.NewOrchestrator(settings)
+		if err != nil {
+			return fmt.Errorf("standard CPU inference benchmark failed: %w", err)
+		}
+		if err := runInferenceBenchmark(bn, sampleSize, clipDuration, &standardResults); err != nil {
+			return fmt.Errorf("standard CPU inference benchmark failed: %w", err)
+		}
+
+		printComparison(&xnnpackResults, &standardResults, clipDuration)
+	}
+
+	return nil
+}
+
+type benchmarkResults struct {
+	totalInferences     int
+	avgTime             time.Duration
+	inferencesPerSecond float64
+}
+
+func runInferenceBenchmark(bn *classifier.Orchestrator, sampleSize int, clipDuration time.Duration, results *benchmarkResults) error {
 	silentChunk := make([]float32, sampleSize)
 
-	// Run for 30 seconds
 	duration := 30 * time.Second
 	startTime := time.Now()
 	var totalInferences int
 	var totalDuration time.Duration
 
-	fmt.Println("⏳ Running benchmark for 30 seconds...")
+	fmt.Println("Running benchmark for 30 seconds...")
 
 	for time.Since(startTime) < duration {
 		inferenceStart := time.Now()
@@ -114,16 +105,14 @@ func runInferenceBenchmark(settings *conf.Settings, results *benchmarkResults) e
 		totalDuration += inferenceTime
 		totalInferences++
 
-		// Update progress display
 		if totalInferences%10 == 0 {
 			avgTime := totalDuration / time.Duration(totalInferences)
-			fmt.Printf("\r🔄 Inferences: \033[1;36m%d\033[0m, Average time: \033[1;33m%dms\033[0m",
+			fmt.Printf("\r  Inferences: %d, Average time: %dms",
 				totalInferences, avgTime.Milliseconds())
 		}
 	}
-	fmt.Println() // Add newline after progress display
+	fmt.Println()
 
-	// Calculate and store results
 	results.totalInferences = totalInferences
 	results.avgTime = totalDuration / time.Duration(totalInferences)
 	results.inferencesPerSecond = float64(totalInferences) / duration.Seconds()
@@ -131,23 +120,76 @@ func runInferenceBenchmark(settings *conf.Settings, results *benchmarkResults) e
 	return nil
 }
 
-func getPerformanceRating(inferenceTime float64) (rating, description string) {
+func printSingleResult(backend string, results *benchmarkResults, clipDuration time.Duration) {
+	fmt.Printf("\nResults:\n")
+	fmt.Printf("Method         Inference Time   Throughput\n")
+	fmt.Printf("─────────────  ───────────────  ──────────────────────\n")
+	fmt.Printf("%-14s %6.1f ms         %6.2f inferences/sec\n",
+		backend,
+		float64(results.avgTime.Milliseconds()),
+		results.inferencesPerSecond)
+	fmt.Printf("─────────────  ───────────────  ──────────────────────\n")
+
+	rating, description := getPerformanceRating(float64(results.avgTime.Milliseconds()), clipDuration)
+	fmt.Printf("\nSystem Rating: %s, %s\n", rating, description)
+}
+
+func printComparison(xnnpack, standard *benchmarkResults, clipDuration time.Duration) {
+	fmt.Printf("\nResults:\n")
+	fmt.Printf("Method         Inference Time   Throughput\n")
+	fmt.Printf("─────────────  ───────────────  ──────────────────────\n")
+
+	if standard.totalInferences > 0 {
+		fmt.Printf("Standard       %6.1f ms         %6.2f inferences/sec\n",
+			float64(standard.avgTime.Milliseconds()),
+			standard.inferencesPerSecond)
+	} else {
+		fmt.Printf("Standard       Failed\n")
+	}
+
+	if xnnpack.totalInferences > 0 {
+		fmt.Printf("XNNPACK        %6.1f ms         %6.2f inferences/sec\n",
+			float64(xnnpack.avgTime.Milliseconds()),
+			xnnpack.inferencesPerSecond)
+	} else {
+		fmt.Printf("XNNPACK        Failed\n")
+	}
+	fmt.Printf("─────────────  ───────────────  ──────────────────────\n")
+
+	if xnnpack.totalInferences > 0 && standard.totalInferences > 0 {
+		speedImprovement := (float64(standard.avgTime.Milliseconds()) -
+			float64(xnnpack.avgTime.Milliseconds())) /
+			float64(standard.avgTime.Milliseconds()) * 100
+
+		fmt.Printf("\nSpeed improvement with XNNPACK: %.1f%%\n", speedImprovement)
+
+		rating, description := getPerformanceRating(float64(xnnpack.avgTime.Milliseconds()), clipDuration)
+		fmt.Printf("System Rating: %s, %s\n", rating, description)
+	}
+}
+
+// getPerformanceRating assesses whether the system can keep up with real-time
+// analysis. The budget is the model's clip duration (e.g., 3s for v2.4, 5s for v3.0).
+func getPerformanceRating(inferenceTimeMs float64, clipDuration time.Duration) (rating, description string) {
+	budgetMs := float64(clipDuration.Milliseconds())
+	ratio := inferenceTimeMs / budgetMs
+
 	switch {
-	case inferenceTime > 3000:
-		return "❌ Failed", "System is too slow for BirdNET-Go real-time detection"
-	case inferenceTime > 2000:
-		return "❌ Very Poor", "System is too slow for reliable operation"
-	case inferenceTime > 1000:
-		return "⚠️ Poor", "System may struggle with real-time detection"
-	case inferenceTime > 500:
-		return "👍 Decent", "System should handle real-time detection"
-	case inferenceTime > 200:
-		return "✨ Good", "System will perform well"
-	case inferenceTime > 100:
-		return "🌟 Very Good", "System will perform very well"
-	case inferenceTime > 20:
-		return "🏆 Excellent", "System will perform excellently"
+	case ratio > 1.0:
+		return "Failed", "System is too slow for real-time detection"
+	case ratio > 0.67:
+		return "Very Poor", "System is too slow for reliable operation"
+	case ratio > 0.33:
+		return "Poor", "System may struggle with real-time detection"
+	case ratio > 0.17:
+		return "Decent", "System should handle real-time detection"
+	case ratio > 0.07:
+		return "Good", "System will perform well"
+	case ratio > 0.03:
+		return "Very Good", "System will perform very well"
+	case ratio > 0.007:
+		return "Excellent", "System will perform excellently"
 	default:
-		return "🚀 Superb", "System will perform exceptionally well"
+		return "Superb", "System will perform exceptionally well"
 	}
 }
