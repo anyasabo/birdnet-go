@@ -384,30 +384,61 @@ func (m *BufferManager) UpdateMonitors(sourceModels map[string][]monitorConfig) 
 
 // analysisBufferMonitor reads from the audiocore analysis buffer and feeds
 // audio chunks to the BirdNET analysis pipeline.
+//
+// The monitor is event-driven: it waits on the AnalysisBuffer's Ready()
+// channel, which fires when a Write pushes the ring past readSize bytes.
+// A fallback ticker (5s) handles edge cases where the buffer already had
+// enough data before the monitor started, or where a signal was coalesced
+// while ProcessData was running.
 func (m *BufferManager) analysisBufferMonitor(quitChan chan struct{}, cfg monitorConfig) {
 	const detectionOffset = 10 * time.Second
-	const pollInterval = 100 * time.Millisecond
+	const fallbackInterval = 5 * time.Second
 
-	// Use the model-specific read size from the config instead of the
-	// hardcoded constant that assumed BirdNET v2.4 parameters.
 	analysisWindowBytes := cfg.readSize
-
-	// Track whether we ever successfully accessed the buffer to
-	// distinguish "never allocated" from "removed after use".
 	hasReadBuffer := false
 
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
+	// Attempt to get the Ready channel. If the buffer doesn't exist yet,
+	// fall back to pure polling until it appears.
+	var readyCh <-chan struct{}
+	if ab, err := m.bufferMgr.AnalysisBuffer(cfg.sourceID, cfg.modelID); err == nil {
+		readyCh = ab.Ready()
+	}
+
+	fallback := time.NewTicker(fallbackInterval)
+	defer fallback.Stop()
 
 	for {
-		select {
-		case <-quitChan:
-			return
-		case <-ticker.C:
-			keepRunning, newHasReadBuffer := m.processMonitorTick(quitChan, cfg, analysisWindowBytes, detectionOffset, hasReadBuffer)
-			hasReadBuffer = newHasReadBuffer
-			if !keepRunning {
+		if readyCh != nil {
+			select {
+			case <-quitChan:
 				return
+			case <-readyCh:
+				keepRunning, newHasReadBuffer := m.processMonitorTick(quitChan, cfg, analysisWindowBytes, detectionOffset, hasReadBuffer)
+				hasReadBuffer = newHasReadBuffer
+				if !keepRunning {
+					return
+				}
+			case <-fallback.C:
+				keepRunning, newHasReadBuffer := m.processMonitorTick(quitChan, cfg, analysisWindowBytes, detectionOffset, hasReadBuffer)
+				hasReadBuffer = newHasReadBuffer
+				if !keepRunning {
+					return
+				}
+			}
+		} else {
+			// Buffer not yet available; poll until it appears.
+			select {
+			case <-quitChan:
+				return
+			case <-fallback.C:
+				if ab, err := m.bufferMgr.AnalysisBuffer(cfg.sourceID, cfg.modelID); err == nil {
+					readyCh = ab.Ready()
+				}
+				keepRunning, newHasReadBuffer := m.processMonitorTick(quitChan, cfg, analysisWindowBytes, detectionOffset, hasReadBuffer)
+				hasReadBuffer = newHasReadBuffer
+				if !keepRunning {
+					return
+				}
 			}
 		}
 	}

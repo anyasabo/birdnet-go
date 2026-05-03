@@ -37,7 +37,8 @@ type AnalysisBuffer struct {
 	tracker     *OverwriteTracker
 	mu          sync.Mutex
 	log         logger.Logger
-	windowPool  *BytePool // nil when unpooled; sized to windowSize when set
+	windowPool  *BytePool       // nil when unpooled; sized to windowSize when set
+	readyCh     chan struct{}    // signaled (non-blocking) when ring has >= readSize bytes
 }
 
 // NewAnalysisBuffer creates an AnalysisBuffer with a ring buffer of the given
@@ -141,6 +142,7 @@ func NewAnalysisBuffer(capacity, overlapSize, readSize int, sourceID string, log
 		tracker:     NewOverwriteTracker(trackerOpts),
 		log:         log,
 		windowPool:  windowPool,
+		readyCh:     make(chan struct{}, 1),
 	}, nil
 }
 
@@ -153,7 +155,15 @@ func (ab *AnalysisBuffer) Write(data []byte) error {
 	ab.mu.Lock()
 	willOverwrite := len(data) > ab.ring.Free()
 	_, err := ab.ring.Write(data)
+	ready := ab.ring.Length() >= ab.readSize
 	ab.mu.Unlock()
+
+	if ready {
+		select {
+		case ab.readyCh <- struct{}{}:
+		default:
+		}
+	}
 
 	ab.tracker.RecordWrite()
 	if willOverwrite {
@@ -257,6 +267,14 @@ func (ab *AnalysisBuffer) OverwriteCount() int64 {
 	ab.tracker.mu.Lock()
 	defer ab.tracker.mu.Unlock()
 	return ab.tracker.overwriteCount
+}
+
+// Ready returns a channel that receives a value when the ring buffer
+// accumulates at least readSize bytes (one full analysis window). The channel
+// is buffered with capacity 1, so redundant signals are coalesced.
+// Monitors can select on this instead of polling on a timer.
+func (ab *AnalysisBuffer) Ready() <-chan struct{} {
+	return ab.readyCh
 }
 
 // Reset clears the ring buffer and resets all overlap and tracking state.
