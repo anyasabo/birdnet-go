@@ -161,19 +161,7 @@ func NewBirdNET(settings *conf.Settings, modelInfo *ModelInfo) (*BirdNET, error)
 	}
 
 	// Normalize and validate locale setting.
-	inputLocale := strings.ToLower(settings.BirdNET.Locale)
-	normalizedLocale, err := conf.NormalizeLocale(inputLocale)
-	if err != nil {
-		return nil, err
-	}
-	settings.BirdNET.Locale = normalizedLocale
-
-	// Check if the locale is supported by the model
-	if !IsLocaleSupported(&bn.ModelInfo, normalizedLocale) {
-		bn.Debug("Warning: Locale '%s' is not officially supported by model '%s'. Using default locale '%s'.",
-			normalizedLocale, bn.ModelInfo.ID, bn.ModelInfo.DefaultLocale)
-		settings.BirdNET.Locale = bn.ModelInfo.DefaultLocale
-	}
+	bn.normalizeAndValidateLocale()
 
 	// Validate model and labels, which will also allocate the results buffer
 	if err := bn.validateModelAndLabels(); err != nil {
@@ -186,6 +174,29 @@ func NewBirdNET(settings *conf.Settings, modelInfo *ModelInfo) (*BirdNET, error)
 	}
 
 	return bn, nil
+}
+
+// normalizeAndValidateLocale normalizes settings locale to a known code.
+// Unsupported inputs fall back to a default locale and are logged as warnings,
+// but never fail model initialization.
+func (bn *BirdNET) normalizeAndValidateLocale() {
+	inputLocale := strings.ToLower(bn.Settings.BirdNET.Locale)
+	normalizedLocale, err := conf.NormalizeLocale(inputLocale)
+	if err != nil {
+		GetLogger().Warn("BirdNET locale not supported, using fallback locale",
+			logger.String("requested_locale", inputLocale),
+			logger.String("fallback_locale", normalizedLocale),
+			logger.Error(err))
+	}
+
+	bn.Settings.BirdNET.Locale = normalizedLocale
+
+	// Check if the normalized locale is supported by the resolved model.
+	if !IsLocaleSupported(&bn.ModelInfo, normalizedLocale) {
+		bn.Debug("Warning: Locale '%s' is not officially supported by model '%s'. Using default locale '%s'.",
+			normalizedLocale, bn.ModelInfo.ID, bn.ModelInfo.DefaultLocale)
+		bn.Settings.BirdNET.Locale = bn.ModelInfo.DefaultLocale
+	}
 }
 
 // isONNXModel returns true if the model path points to an ONNX model file.
