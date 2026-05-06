@@ -9,6 +9,7 @@ superpowers/
 db/
 cache/
 spectrograms/
+.cache/
 .task/*
 .vscode/*
 .mcp.json
