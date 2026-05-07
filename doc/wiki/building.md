@@ -53,7 +53,7 @@ This project uses [Task](https://taskfile.dev/) (`Taskfile.yml`) as its build sy
 ### 2. Prepare Dependencies (Handled mostly by Task)
 
 - **TensorFlow Lite C Library:** `task` will automatically download the correct pre-compiled library (from [tphakala/tflite_c](https://github.com/tphakala/tflite_c/releases/tag/{{TFLITE_VERSION}})) for your target OS/architecture when you run a build task. It places the library in the expected system path (e.g., `/usr/lib`, `/usr/local/lib`, `/opt/homebrew/lib`, or `/usr/x86_64-w64-mingw32/lib` for Windows cross-compile) and creates necessary symlinks.
-- **TensorFlow Headers:** `task` checks if TensorFlow source code (needed for C header files for CGO) is present in `$HOME/src/tensorflow`. If not, it clones the specific tag (`{{TFLITE_VERSION}}`) required.
+- **TensorFlow Headers:** `task` checks if TensorFlow source code (needed for C header files for CGO) is present in `.cache/tensorflow/` inside the project root. If not, it clones the specific tag (`{{TFLITE_VERSION}}`) required.
 
 ### 3. Build BirdNET-Go
 
