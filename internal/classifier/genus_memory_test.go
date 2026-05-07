@@ -87,6 +87,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 // TestMemoryLeaks tests for memory leaks during repeated operations
 func TestMemoryLeaks(t *testing.T) {
+	// Stress test: 10,000 iterations measuring MemStats for leak detection (~5s).
 	if testing.Short() {
 		t.Skip("Skipping memory leak test in short mode")
 	}

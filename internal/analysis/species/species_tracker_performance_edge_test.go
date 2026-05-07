@@ -23,6 +23,7 @@ import (
 //
 //nolint:gocognit // Memory stress test with multiple scenarios requires complex verification
 func TestMemoryExhaustionScenarios(t *testing.T) {
+	// Stress test: 15,000 species entries under memory pressure (~5-10s).
 	if testing.Short() {
 		t.Skip("Skipping memory exhaustion tests in short mode")
 	}

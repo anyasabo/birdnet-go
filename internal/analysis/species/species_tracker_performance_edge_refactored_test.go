@@ -197,6 +197,7 @@ func verifyPerformanceResults(t *testing.T, config sustainedLoadConfig, metrics 
 // TestPerformanceUnderSustainedLoadRefactored tests tracker performance under sustained load
 // This is the refactored version with reduced cognitive complexity
 func TestPerformanceUnderSustainedLoadRefactored(t *testing.T) {
+	// Stress test: 10-15s sustained load with throughput assertions.
 	if testing.Short() {
 		t.Skip("Skipping sustained load tests in short mode")
 	}

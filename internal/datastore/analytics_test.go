@@ -633,6 +633,7 @@ func TestGetHourlyDistribution(t *testing.T) {
 
 // TestDatabasePerformance tests performance with larger datasets
 func TestDatabasePerformance(t *testing.T) {
+	// Perf test: 5,000 rows with query latency assertions (~5-10s).
 	if testing.Short() {
 		t.Skip("Skipping performance test in short mode")
 	}

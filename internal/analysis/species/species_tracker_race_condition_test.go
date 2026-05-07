@@ -193,6 +193,7 @@ func TestRaceConditionFixDemo(t *testing.T) {
 
 // TestHighContentionScenario creates maximum contention to reliably trigger race conditions
 func TestHighContentionScenario(t *testing.T) {
+	// Stress test: 500 goroutines x 20 operations to trigger race conditions (~5-10s).
 	if testing.Short() {
 		t.Skip("Skipping high contention test in short mode")
 	}

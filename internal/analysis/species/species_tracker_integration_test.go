@@ -520,6 +520,7 @@ func TestFullWorkflow_NotificationSystem(t *testing.T) {
 //
 //nolint:gocognit // Performance test with load simulation requires complex setup
 func TestFullWorkflow_PerformanceUnderLoad(t *testing.T) {
+	// Stress test: full workflow under load with throughput assertions (~5-10s).
 	if testing.Short() {
 		t.Skip("Skipping performance test in short mode")
 	}

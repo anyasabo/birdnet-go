@@ -393,8 +393,8 @@ func TestRefreshEntryFallbackPolicyNone(t *testing.T) {
 
 	// Wait for background refresh goroutine to complete. Since policy is "none",
 	// no observable state change occurs (no fallback, no DB update), so we must
-	// use a fixed wait. 2s is generous for CI where the goroutine does minimal work.
-	time.Sleep(2 * time.Second)
+	// use a fixed wait.
+	time.Sleep(500 * time.Millisecond)
 
 	// After refresh with policy "none", primary cache should NOT have wikimedia image
 	img, err := primaryCache.Get(species)

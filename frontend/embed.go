@@ -14,6 +14,9 @@ var distDir embed.FS
 var DistFS fs.FS
 
 func init() {
-	// Strip the "dist" prefix to serve files directly
-	DistFS, _ = fs.Sub(distDir, "dist")
+	var err error
+	DistFS, err = fs.Sub(distDir, "dist")
+	if err != nil {
+		panic("frontend: failed to initialize embedded filesystem: " + err.Error())
+	}
 }

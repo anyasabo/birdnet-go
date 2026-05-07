@@ -403,6 +403,7 @@ func TestGetHourlyWeather_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("very large dataset performance", func(t *testing.T) {
+		// Perf test: large weather dataset with query timing assertions (~5s).
 		if testing.Short() {
 			t.Skip("Skipping performance test in short mode")
 		}

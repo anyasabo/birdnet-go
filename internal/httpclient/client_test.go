@@ -15,6 +15,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
 	t.Run("default config", func(t *testing.T) {
 		cfg := DefaultConfig()
 		client := New(&cfg)
@@ -45,6 +46,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestDo_BasicRequest(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method, "expected GET method")
 		w.WriteHeader(http.StatusOK)
@@ -68,6 +70,7 @@ func TestDo_BasicRequest(t *testing.T) {
 }
 
 func TestDo_UserAgent(t *testing.T) {
+	t.Parallel()
 	receivedUA := ""
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		receivedUA = r.Header.Get("User-Agent")
@@ -88,8 +91,9 @@ func TestDo_UserAgent(t *testing.T) {
 }
 
 func TestDo_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -110,6 +114,7 @@ func TestDo_ContextCancellation(t *testing.T) {
 }
 
 func TestDo_ContextTimeout(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -132,6 +137,7 @@ func TestDo_ContextTimeout(t *testing.T) {
 }
 
 func TestDo_DefaultTimeout(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -153,6 +159,7 @@ func TestDo_DefaultTimeout(t *testing.T) {
 }
 
 func TestDo_ContextTimeoutOverridesDefault(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(20 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -177,6 +184,7 @@ func TestDo_ContextTimeoutOverridesDefault(t *testing.T) {
 }
 
 func TestDo_ConcurrentRequests(t *testing.T) {
+	t.Parallel()
 	var requestCount atomic.Int32
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
@@ -233,6 +241,7 @@ func TestDo_ConcurrentRequests(t *testing.T) {
 }
 
 func TestDo_Hooks(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -268,6 +277,7 @@ func TestDo_Hooks(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method, "expected GET method")
 		w.WriteHeader(http.StatusOK)
@@ -288,6 +298,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestPost(t *testing.T) {
+	t.Parallel()
 	server := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method, "expected POST method")
 		ct := r.Header.Get("Content-Type")
@@ -305,6 +316,7 @@ func TestPost(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 	client := New(&cfg)
 

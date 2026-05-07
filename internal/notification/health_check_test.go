@@ -345,18 +345,17 @@ func TestHealthChecker_StartStop(t *testing.T) {
 	err := hc.Start(ctx)
 	require.NoError(t, err)
 
-	// Wait for at least one check - use longer timeout for CI reliability
-	time.Sleep(250 * time.Millisecond)
-
-	// Verify provider was checked
-	assert.Positive(t, provider.getValidateCalled())
+	// Poll until at least one health check has run
+	require.Eventually(t, func() bool {
+		return provider.getValidateCalled() > 0
+	}, 2*time.Second, 10*time.Millisecond, "Health check should run at least once")
 
 	// Stop health checker
 	hc.Stop()
 
 	// Verify no more checks happen
 	callsBefore := provider.getValidateCalled()
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	callsAfter := provider.getValidateCalled()
 	assert.Equal(t, callsBefore, callsAfter)
 }

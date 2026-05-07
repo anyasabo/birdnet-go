@@ -9,29 +9,34 @@ import (
 )
 
 func TestResolveTimezone_Helsinki(t *testing.T) {
+	t.Parallel()
 	loc := resolveTimezone(testLatitude, testLongitude)
 	require.NotNil(t, loc, "resolveTimezone returned nil")
 	assert.Equal(t, "Europe/Helsinki", loc.String(), "expected Europe/Helsinki timezone for Helsinki coordinates")
 }
 
 func TestResolveTimezone_NewYork(t *testing.T) {
+	t.Parallel()
 	loc := resolveTimezone(40.7128, -74.0060)
 	require.NotNil(t, loc, "resolveTimezone returned nil")
 	assert.Equal(t, "America/New_York", loc.String(), "expected America/New_York timezone")
 }
 
 func TestResolveTimezone_Tokyo(t *testing.T) {
+	t.Parallel()
 	loc := resolveTimezone(35.6762, 139.6503)
 	require.NotNil(t, loc, "resolveTimezone returned nil")
 	assert.Equal(t, "Asia/Tokyo", loc.String(), "expected Asia/Tokyo timezone")
 }
 
 func TestResolveTimezone_FallbackOnZeroCoordinates(t *testing.T) {
+	t.Parallel()
 	loc := resolveTimezone(0.0, 0.0)
 	require.NotNil(t, loc, "resolveTimezone returned nil for (0,0)")
 }
 
 func TestResolveTimezone_CacheReturnsSameLocation(t *testing.T) {
+	t.Parallel()
 	first := resolveTimezone(testLatitude, testLongitude)
 	second := resolveTimezone(testLatitude, testLongitude)
 	require.NotNil(t, first)
@@ -47,6 +52,7 @@ func TestResolveTimezone_CacheReturnsSameLocation(t *testing.T) {
 }
 
 func TestResolveTimezone_NearbyCoordsShareCacheEntry(t *testing.T) {
+	t.Parallel()
 	// Coordinates within ~11 m (the 4-decimal cache precision) must
 	// share a cache entry, so tiny config drift does not re-load the
 	// 32 MB tzf dataset.
@@ -68,12 +74,14 @@ func TestResolveTimezone_NearbyCoordsShareCacheEntry(t *testing.T) {
 }
 
 func TestNewSunCalc_StoresLocation(t *testing.T) {
+	t.Parallel()
 	sc := NewSunCalc(testLatitude, testLongitude)
 	require.NotNil(t, sc.location, "SunCalc.location is nil after construction")
 	assert.Equal(t, "Europe/Helsinki", sc.location.String(), "SunCalc.location should be Europe/Helsinki")
 }
 
 func TestSunEventTimes_HelsinkiSummerTimezone(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	date := midsummerDate()
 
@@ -94,6 +102,7 @@ func TestSunEventTimes_HelsinkiSummerTimezone(t *testing.T) {
 }
 
 func TestSunEventTimes_HelsinkiWinterTimezone(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	date := time.Date(2024, 12, 21, 0, 0, 0, 0, time.UTC)
 
@@ -105,6 +114,7 @@ func TestSunEventTimes_HelsinkiWinterTimezone(t *testing.T) {
 }
 
 func TestSunEventTimes_IndependentOfSystemTZ(t *testing.T) {
+	t.Parallel()
 	sc := NewSunCalc(testLatitude, testLongitude)
 	date := midsummerDate()
 
@@ -116,6 +126,7 @@ func TestSunEventTimes_IndependentOfSystemTZ(t *testing.T) {
 }
 
 func TestCacheKey_NormalizedToObserverTimezone(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	dateUTC := time.Date(2024, 6, 21, 0, 0, 0, 0, time.UTC)
 	dateLater := time.Date(2024, 6, 21, 5, 0, 0, 0, time.UTC)
@@ -131,6 +142,7 @@ func TestCacheKey_NormalizedToObserverTimezone(t *testing.T) {
 }
 
 func TestCacheKey_DateBoundaryNearMidnightUTC(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	lateUTC := time.Date(2024, 6, 20, 23, 0, 0, 0, time.UTC)
 

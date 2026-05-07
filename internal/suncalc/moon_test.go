@@ -9,6 +9,7 @@ import (
 )
 
 func TestGetMoonPhase_NewMoon(t *testing.T) {
+	t.Parallel()
 	// Jan 29, 2025 is approximately a new moon
 	date := time.Date(2025, 1, 29, 12, 0, 0, 0, time.UTC)
 	result := GetMoonPhase(date)
@@ -19,6 +20,7 @@ func TestGetMoonPhase_NewMoon(t *testing.T) {
 }
 
 func TestGetMoonPhase_FullMoon(t *testing.T) {
+	t.Parallel()
 	// Jan 13, 2025 is approximately a full moon
 	date := time.Date(2025, 1, 13, 12, 0, 0, 0, time.UTC)
 	result := GetMoonPhase(date)
@@ -29,6 +31,7 @@ func TestGetMoonPhase_FullMoon(t *testing.T) {
 }
 
 func TestGetMoonPhase_AllPhasesHaveValidIconNames(t *testing.T) {
+	t.Parallel()
 	validIcons := make(map[string]bool, len(phases))
 	for _, p := range phases {
 		validIcons[p.iconName] = true
@@ -57,6 +60,7 @@ func TestGetMoonPhase_AllPhasesHaveValidIconNames(t *testing.T) {
 }
 
 func TestGetMoonPhase_PhaseRange(t *testing.T) {
+	t.Parallel()
 	date := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	result := GetMoonPhase(date)
 
@@ -65,6 +69,7 @@ func TestGetMoonPhase_PhaseRange(t *testing.T) {
 }
 
 func TestMoonPhaseEmoji(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		phaseName string
 		expected  string

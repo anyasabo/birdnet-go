@@ -686,19 +686,17 @@ func TestBirdImageCacheRefresh(t *testing.T) {
 		assert.NoError(t, cache.Close(), "Failed to close cache")
 	})
 
-	// Wait for refresh routine to run
+	// Poll until the background refresh updates the cache entry
 	t.Log("Waiting for refresh routine to run...")
-	time.Sleep(5 * time.Second)
-
-	// Check if the entry was refreshed
-	refreshed, err := mockStore.GetImageCache(datastore.ImageCacheQuery{ScientificName: "Turdus merula", ProviderName: "wikimedia"})
-	require.NoError(t, err, "Failed to get refreshed cache entry")
-	require.NotNil(t, refreshed, "Refreshed image cache entry is nil")
-
-	// Check timestamp was updated
-	assert.False(t, refreshed.CachedAt.Equal(oldEntry.CachedAt),
-		"Expected CachedAt to be updated after refresh. Old: %v, New: %v",
-		oldEntry.CachedAt, refreshed.CachedAt)
+	var refreshed *datastore.ImageCache
+	require.Eventually(t, func() bool {
+		r, err := mockStore.GetImageCache(datastore.ImageCacheQuery{ScientificName: "Turdus merula", ProviderName: "wikimedia"})
+		if err != nil || r == nil {
+			return false
+		}
+		refreshed = r
+		return !r.CachedAt.Equal(oldEntry.CachedAt)
+	}, 10*time.Second, 50*time.Millisecond, "Cache entry should be refreshed by background routine")
 
 	// Check URL was changed
 	assert.NotEqual(t, oldEntry.URL, refreshed.URL,

@@ -163,9 +163,6 @@ func TestNegativeCaching(t *testing.T) {
 // TestBackgroundRefreshIsolation ensures background refresh doesn't affect user requests
 func TestBackgroundRefreshIsolation(t *testing.T) {
 	t.Skip("TODO: Fix test - background refresh tracking mechanism needs refactoring")
-	if testing.Short() {
-		t.Skip("Skipping background refresh test in short mode")
-	}
 	t.Parallel()
 
 	mockProvider := &mockProviderWithContextTracking{

@@ -169,6 +169,7 @@ func TestMigration_EndToEnd_HappyPath(t *testing.T) {
 // ============================================================================
 
 func TestMigration_LargeDataset(t *testing.T) {
+	// Stress test: 10,000 rows through full migration pipeline (~10-30s).
 	if testing.Short() {
 		t.Skip("skipping large dataset test in short mode")
 	}

@@ -26,6 +26,80 @@ require.NoError(t, err)
 assert.Equal(t, expected, got)
 ```
 
+## Running Tests
+
+### Quick Reference
+
+| Tier | Command | Preconditions | Expected Time |
+|------|---------|---------------|---------------|
+| Unit | `task test` | CGO enabled, TFLite headers | < 60s |
+| Integration | `go test -tags=integration -race -timeout 300s ./internal/datastore/v2/... ./internal/mqtt/... ./internal/spectrogram/... ./internal/testutil/containers/...` | Docker (testcontainers), SoX | 1-5 min |
+| Stress/perf | `task test` (runs by default) | Same as unit | Varies |
+
+### Zero-Skip Rule
+
+`task test` must produce **zero skipped tests**. If `go test` output shows skipped tests at the unit tier, that is a bug. Tests that need external infrastructure belong behind `//go:build integration`, not a runtime `t.Skip()`.
+
+### Tier 1: Unit Tests
+
+Unit tests run on every push and PR via `task test`.
+
+- **Build tags:** `noembed,skipfrontend` (avoids embedding 72MB of TFLite models and the Svelte frontend into test binaries; see "Build Tags" below)
+- **Rule:** Must pass with zero skips in a standard dev environment -- no Docker, no MQTT broker, no external services
+- **CI:** `golangci-test.yml` runs these with `-short` to skip tier 3 stress tests. Locally, `task test` runs all tiers.
+
+### Tier 2: Integration Tests
+
+Integration tests require Docker and are invisible to `task test`. Opt in via `//go:build integration`.
+
+- **What runs:** Testcontainer-backed MySQL, Mosquitto, and MediaMTX; full migration pipelines; real SoX execution for spectrogram tests
+- **When to use this tag:** Any test that needs a real external service (database, message broker, media server) or a binary that may not be installed (`sox`)
+
+### Tier 3: Stress/Performance Tests
+
+Stress tests run by default with `task test` but can be skipped with `task test -- -short` during rapid iteration.
+
+- **Rule:** Only for tests taking >5 seconds due to deliberate heavy workloads (thousands of rows, hundreds of goroutines, memory pressure). Never for sleeps or missing infrastructure.
+- **CI:** `golangci-test.yml` runs with `-short` so stress tests are skipped in PR CI. Release and nightly workflows should run without `-short`.
+
+### When to Use `testing.Short()`
+
+Use `testing.Short()` **only** for deliberate stress/performance tests that take >5 seconds due to intentional heavy computation. Each guard must have a one-line comment explaining the workload:
+
+```go
+// Stress test: 10,000 iterations measuring MemStats for leak detection (~5s).
+if testing.Short() {
+    t.Skip("Skipping memory leak test in short mode")
+}
+```
+
+Never use `testing.Short()` for:
+- Tests that are slow because of `time.Sleep` (fix the sleep instead)
+- Tests that need external infrastructure (use `//go:build integration`)
+- Tests that "might be flaky" (fix the flakiness)
+
+### Build Tags
+
+**`noembed`** -- Replaces the 72MB of `//go:embed` TFLite model data with nil byte slices. Without this tag, every test binary embeds the full model files, ballooning compile time and memory. The runtime code paths are identical (`if modelData != nil { return modelData }` vs loading from disk).
+
+**`skipfrontend`** -- Replaces the `//go:embed all:dist` Svelte build output with a stub `fstest.MapFS`. Without this tag, `go test` requires `frontend/dist/` to exist (i.e., a full frontend build).
+
+**`integration`** -- Gates tests that need Docker (testcontainers) or external binaries. These tests are invisible to `task test` and `go test ./...` by default.
+
+### Production Compile Check
+
+Tests use `noembed,skipfrontend` but production binaries do not. To ensure the production code paths compile correctly, CI runs `go build ./...` without these tags before the test step. This uses a dummy `frontend/dist/index.html` stub (no frontend build needed) and the model files already checked into the repo. The check catches broken `//go:embed` directives, type mismatches, and missing symbols in about 3 seconds.
+
+Running `go test` without these tags is not worth the cost: it embeds 72MB of model data into every package's test binary, and the runtime code paths are trivial.
+
+### Environment Variables
+
+| Variable | Tier | Description |
+|----------|------|-------------|
+| `CGO_ENABLED=1` | Unit, Integration | Required for TFLite C bindings |
+| `CGO_CFLAGS` | Unit, Integration | Path to TFLite C API headers |
+| `MQTT_TEST_BROKER` | Integration (CI only) | Broker address for MQTT integration tests (e.g., `tcp://localhost:1883`) |
+
 ## Assert vs Require
 
 Understanding when to use `assert` vs `require` is critical:

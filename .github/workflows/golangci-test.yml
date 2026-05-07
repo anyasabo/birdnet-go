@@ -40,6 +40,13 @@ jobs:
       - name: Setup TensorFlow Lite
         uses: ./.github/actions/setup-tensorflow
 
+      - name: Verify production embed paths compile
+        run: |
+          mkdir -p frontend/dist
+          echo '<!-- compile check stub -->' > frontend/dist/index.html
+          go build ./...
+          rm -rf frontend/dist
+
       - name: Install FFmpeg, SoX, and test dependencies
         run: |
           sudo apt-get update

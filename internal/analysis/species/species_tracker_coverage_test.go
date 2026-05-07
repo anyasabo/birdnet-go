@@ -1019,6 +1019,7 @@ func TestPruneOldEntriesComprehensive(t *testing.T) {
 
 // TestConcurrentOperationsStress tests heavy concurrent usage
 func TestConcurrentOperationsStress(t *testing.T) {
+	// Stress test: 20 goroutines x 100 mixed operations (~5-10s).
 	if testing.Short() {
 		t.Skip("Skipping stress test in short mode")
 	}

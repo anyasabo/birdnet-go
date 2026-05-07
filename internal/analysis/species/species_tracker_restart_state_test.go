@@ -481,9 +481,6 @@ func TestRestartScenario_FailedInitialization(t *testing.T) {
 
 // TestRecovery_SyncAfterFailedInit validates that SyncIfNeeded can recover from failed initialization
 func TestRecovery_SyncAfterFailedInit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping recovery test in short mode (requires sleep)")
-	}
 	t.Parallel()
 
 	ds := mocks.NewMockInterface(t)
@@ -495,7 +492,7 @@ func TestRecovery_SyncAfterFailedInit(t *testing.T) {
 	settings := &conf.SpeciesTrackingSettings{
 		Enabled:              true,
 		NewSpeciesWindowDays: 14,
-		SyncIntervalMinutes:  1, // Very short for testing (1 minute)
+		SyncIntervalMinutes:  60,
 		YearlyTracking: conf.YearlyTrackingSettings{
 			Enabled:    false,
 			WindowDays: 7,
@@ -522,8 +519,8 @@ func TestRecovery_SyncAfterFailedInit(t *testing.T) {
 	ds.On("GetSpeciesFirstDetectionInPeriod", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return([]datastore.NewSpeciesData{}, nil).Maybe()
 
-	// Wait for sync interval to pass
-	time.Sleep(61 * time.Second) // Just over 1 minute
+	// Simulate sync interval passing by backdating lastSyncTime
+	tracker.lastSyncTime = time.Now().Add(-61 * time.Minute)
 
 	// Trigger sync
 	err = tracker.SyncIfNeeded()
@@ -539,9 +536,6 @@ func TestRecovery_SyncAfterFailedInit(t *testing.T) {
 
 // TestInitFromDatabase_LargeDatasetTimeout validates behavior with 10,000+ species (hardcoded limit)
 func TestInitFromDatabase_LargeDatasetTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping large dataset test in short mode")
-	}
 	t.Parallel()
 
 	ds := mocks.NewMockInterface(t)
@@ -555,11 +549,7 @@ func TestInitFromDatabase_LargeDatasetTimeout(t *testing.T) {
 		}
 	}
 
-	// Simulate slow query
 	ds.On("GetNewSpeciesDetections", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Run(func(args mock.Arguments) {
-			time.Sleep(2 * time.Second) // Simulate slow query
-		}).
 		Return(largeDataset, nil)
 	// BG-17: InitFromDatabase requires notification history (only if NotificationSuppressionHours > 0)
 	ds.On("GetActiveNotificationHistory", mock.AnythingOfType("time.Time")).

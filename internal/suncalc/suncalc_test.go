@@ -9,6 +9,7 @@ import (
 )
 
 func TestNewSunCalc(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	require.NotNil(t, sc, "NewSunCalc returned nil")
 
@@ -17,6 +18,7 @@ func TestNewSunCalc(t *testing.T) {
 }
 
 func TestGetSunEventTimes(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	date := midsummerDate()
 
@@ -40,6 +42,7 @@ func TestGetSunEventTimes(t *testing.T) {
 }
 
 func TestGetSunriseTime(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	date := midsummerDate()
 
@@ -50,6 +53,7 @@ func TestGetSunriseTime(t *testing.T) {
 }
 
 func TestGetSunsetTime(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	date := midsummerDate()
 
@@ -60,6 +64,7 @@ func TestGetSunsetTime(t *testing.T) {
 }
 
 func TestCacheConsistency(t *testing.T) {
+	t.Parallel()
 	sc := newTestSunCalc()
 	date := midsummerDate()
 
