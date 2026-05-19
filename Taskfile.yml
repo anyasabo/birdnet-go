@@ -151,6 +151,7 @@ tasks:
         echo "  • Node.js LTS"
         echo "  • Build tools (gcc, git, wget, etc.)"
         echo "  • Go dev tools (golangci-lint, air)"
+        echo "  • TFLite C library and ONNX Runtime"
         echo "  • Frontend dependencies and Playwright browsers"
         echo ""
         printf "Continue with setup? (y/N) "
@@ -165,6 +166,7 @@ tasks:
       - task: frontend-build
       - task: check-tensorflow
       - task: check-tflite-lib
+      - task: download-onnxruntime
       - task: verify-dev-setup
       - |
         echo ""
@@ -599,6 +601,21 @@ tasks:
           echo "   Install with: cd frontend && npx playwright install --with-deps chromium"
         fi
         cd ..
+
+        # ONNX Runtime (required for BirdNET v3.0 and ONNX models)
+        ONNX_LIB_DIR=""
+        case "$(uname -s)_$(uname -m)" in
+          Darwin_arm64) ONNX_LIB_DIR="/opt/homebrew/lib";;
+          Darwin_*) ONNX_LIB_DIR="/usr/local/lib";;
+          Linux_aarch64|Linux_arm64) ONNX_LIB_DIR="{{.SYSTEM_LIB_DIR_ARM64}}";;
+          Linux_*) ONNX_LIB_DIR="{{.SYSTEM_LIB_DIR_AMD64}}";;
+        esac
+        if ls "${ONNX_LIB_DIR}"/libonnxruntime.* >/dev/null 2>&1; then
+          echo "✅ ONNX Runtime: installed in ${ONNX_LIB_DIR}"
+        else
+          echo "⚠️  ONNX Runtime: not found (required for ONNX models including BirdNET v3.0)"
+          echo "   Install with: task download-onnxruntime"
+        fi
 
         # Audio tools (optional but needed for full test coverage)
         if command -v ffmpeg >/dev/null 2>&1; then
