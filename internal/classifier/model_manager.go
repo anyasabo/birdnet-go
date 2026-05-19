@@ -912,8 +912,12 @@ func (mm *ModelManager) applyConfigForInstall(entry *CatalogEntry, modelPath, la
 
 	switch entry.RegistryID {
 	case RegistryIDBirdNETV3:
-		// BirdNET v3.0 acoustic model config will be added when the model is released.
-		// Geomodel range filter config is applied generically below.
+		if modelPath != "" {
+			updated.BirdNETv3.ModelPath = modelPath
+		}
+		if labelsPath != "" {
+			updated.BirdNETv3.LabelPath = labelsPath
+		}
 	case RegistryIDPerchV2:
 		if modelPath != "" {
 			updated.Perch.ModelPath = modelPath
@@ -990,8 +994,8 @@ func (mm *ModelManager) applyConfigForUninstall(entry *CatalogEntry) {
 
 	switch entry.RegistryID {
 	case RegistryIDBirdNETV3:
-		// BirdNET v3.0 acoustic model config will be cleared when the model is released.
-		// Geomodel range filter config is handled generically below.
+		updated.BirdNETv3.ModelPath = ""
+		updated.BirdNETv3.LabelPath = ""
 	case RegistryIDPerchV2:
 		updated.Perch.ModelPath = ""
 		updated.Perch.LabelPath = ""

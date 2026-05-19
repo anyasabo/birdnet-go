@@ -80,6 +80,9 @@ func setDefaultConfig() {
 	viper.SetDefault("birdnet.rangefilter.model", "latest")
 	viper.SetDefault("birdnet.rangefilter.threshold", 0.01)
 
+	// BirdNET v3.0 side-by-side configuration
+	viper.SetDefault("birdnet_v3.threshold", 0.8)
+
 	// Perch model configuration
 	viper.SetDefault("perch.threshold", 0.5)
 

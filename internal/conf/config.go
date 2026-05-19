@@ -1233,6 +1233,16 @@ type UltrasonicFilterConfig struct {
 	FrequencySplitHz int     `yaml:"frequencysplithz" json:"frequencySplitHz"` // boundary between audible and ultrasonic bands in Hz
 }
 
+// BirdNETv3Config holds configuration for BirdNET v3.0 when running as a secondary
+// model alongside v2.4 (side-by-side comparison mode). When v3.0 is the primary
+// model, use the main BirdNETConfig with version: "3.0" instead.
+type BirdNETv3Config struct {
+	ModelPath string  `yaml:"modelpath,omitempty" json:"modelPath,omitempty"` // path to BirdNET v3.0 ONNX model file
+	LabelPath string  `yaml:"labelpath,omitempty" json:"labelPath,omitempty"` // path to BirdNET v3.0 label file
+	Threshold float64 `yaml:"threshold" json:"threshold"`                     // confidence threshold for v3 detections (0 = use primary threshold)
+	Locale    string  `yaml:"locale,omitempty" json:"locale,omitempty"`       // locale for species labels (empty = use primary locale)
+}
+
 // BSGConfig holds configuration for BSG regional bird models.
 type BSGConfig struct {
 	ModelPath string `yaml:"modelpath,omitempty" json:"modelPath,omitempty"` // path to BSG ONNX model file
@@ -1561,11 +1571,12 @@ type Settings struct {
 		TimeAs24h bool   `yaml:"timeas24h" json:"timeAs24h"` // true 24-hour time format, false 12-hour time format
 	} `yaml:"main" json:"main"`
 
-	BirdNET BirdNETConfig `yaml:"birdnet" json:"birdnet"` // BirdNET configuration
-	Perch   PerchConfig   `yaml:"perch" json:"perch"`     // Perch v2 model configuration
-	Bat     BatConfig     `yaml:"bat" json:"bat"`         // Bat detection configuration
-	BSG     BSGConfig     `yaml:"bsg" json:"bsg"`         // BSG regional bird model configuration
-	Models  ModelsConfig  `yaml:"models" json:"models"`   // Global model enablement and management
+	BirdNET   BirdNETConfig   `yaml:"birdnet" json:"birdnet"`       // BirdNET configuration
+	BirdNETv3 BirdNETv3Config `yaml:"birdnet_v3" json:"birdnetV3"` // BirdNET v3.0 side-by-side configuration
+	Perch     PerchConfig     `yaml:"perch" json:"perch"`           // Perch v2 model configuration
+	Bat       BatConfig       `yaml:"bat" json:"bat"`               // Bat detection configuration
+	BSG       BSGConfig       `yaml:"bsg" json:"bsg"`               // BSG regional bird model configuration
+	Models    ModelsConfig    `yaml:"models" json:"models"`         // Global model enablement and management
 
 	TaxonomySynonyms map[string]string `yaml:"taxonomySynonyms" json:"taxonomySynonyms" mapstructure:"taxonomySynonyms"` // Optional scientific-name synonym overrides merged with built-ins
 
