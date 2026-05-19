@@ -30,6 +30,7 @@ export interface Detection {
   clipName?: string;
   weather?: Weather;
   timeOfDay?: string;
+  modelVersion?: string; // AI model version that produced this detection (e.g. "2.4", "3.0")
   // Species tracking metadata
   isNewSpecies?: boolean; // First seen within tracking window
   daysSinceFirstSeen?: number; // Days since species was first detected
@@ -98,6 +99,7 @@ export interface DetectionQueryParams {
   numResults?: number;
   offset?: number;
   sortBy?: DetectionSortBy;
+  model_version?: string;
 }
 
 export interface DetectionReviewRequest {

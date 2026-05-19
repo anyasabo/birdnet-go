@@ -814,6 +814,9 @@
     "pagination": {
       "showing": "Zobrazuje se {from} až {to} z {total} výsledků"
     },
+    "filters": {
+      "allModels": "All models"
+    },
     "selection": {
       "select": "Select",
       "nSelected": "{count} selected",
@@ -4684,7 +4687,14 @@
       "geomodelBadge": "Obsahuje BirdNET v3.0 geomodel",
       "onnxRuntimeRequired": "Vyžaduje ONNX Runtime, který není v tomto systému k dispozici.",
       "onnxRuntimeMissing": "ONNX Runtime není k dispozici. Tento model nelze spustit.",
-      "unavailable": "Nedostupné"
+      "unavailable": "Nedostupné",
+      "preview": "Preview",
+      "sideBySide": {
+        "title": "Side-by-Side Comparison",
+        "active": "BirdNET v2.4 and v3.0 are both running. Detections are tagged by model version.",
+        "inactive": "Install BirdNET v3.0 from the Available tab to enable side-by-side comparison with v2.4.",
+        "enabled": "Active"
+      }
     },
     "bird": {
       "title": "Detekce ptáků",

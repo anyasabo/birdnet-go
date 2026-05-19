@@ -159,6 +159,7 @@
 
   // ── Derived catalog views ─────────────────────────────────────────────
   const installedEntries = $derived(catalog.filter(e => e.installed));
+  const hasBirdNETv3 = $derived(catalog.some(e => e.installed && e.id.includes('v3')));
   const availableWildlife = $derived(
     catalog.filter(e => !e.installed && e.category === 'wildlife')
   );
@@ -1457,6 +1458,39 @@
 <!-- ── Gallery: Installed Tab ────────────────────────────────────────── -->
 {#snippet installedTabContent()}
   <div class="space-y-4">
+    <!-- Side-by-side mode status -->
+    {#if !loading && !error}
+      <div
+        class={cn(
+          'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm',
+          hasBirdNETv3
+            ? 'border-[var(--color-success)]/30 bg-[var(--color-success)]/10'
+            : 'border-[var(--color-base-300)] bg-[var(--color-base-200)]/50'
+        )}
+      >
+        <div class="flex-1">
+          <span class="font-medium text-[var(--color-base-content)]">
+            {t('analysis.gallery.sideBySide.title')}
+          </span>
+          <span class="ml-2 text-[var(--color-base-content)]/80">
+            {#if hasBirdNETv3}
+              {t('analysis.gallery.sideBySide.active')}
+            {:else}
+              {t('analysis.gallery.sideBySide.inactive')}
+            {/if}
+          </span>
+        </div>
+        {#if hasBirdNETv3}
+          <span
+            class="inline-flex items-center gap-1 rounded-full bg-[var(--color-success)]/15 px-2.5 py-0.5 text-xs font-medium text-[var(--color-success)]"
+          >
+            <Check class="size-3" />
+            {t('analysis.gallery.sideBySide.enabled')}
+          </span>
+        {/if}
+      </div>
+    {/if}
+
     {#if loading}
       <div class="flex items-center justify-center py-12">
         <Loader2 class="size-6 animate-spin text-[var(--color-primary)]" />
@@ -1518,6 +1552,7 @@
           {@const isReinstalling = reinstallingId === entry.id}
           {@const reinstallProgress = isReinstalling ? downloadProgress : null}
           {@const logo = getModelLogo(entry.id)}
+          {@const isPreviewInstalled = entry.id.includes('v3')}
           <div
             class="rounded-lg border border-[var(--color-base-300)] bg-[var(--color-base-200)] p-4"
           >
@@ -1536,7 +1571,16 @@
                 </div>
               {/if}
               <div class="min-w-0 flex-1">
-                <h4 class="text-sm font-semibold text-[var(--color-base-content)]">{entry.name}</h4>
+                <div class="flex items-center gap-2">
+                  <h4 class="text-sm font-semibold text-[var(--color-base-content)]">{entry.name}</h4>
+                  {#if isPreviewInstalled}
+                    <span
+                      class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
+                    >
+                      {t('analysis.gallery.preview')}
+                    </span>
+                  {/if}
+                </div>
                 <p class="mt-0.5 line-clamp-2 text-xs text-[var(--color-base-content)]/80">
                   {entry.description}
                 </p>
@@ -1698,6 +1742,7 @@
   {@const isInstalling = installingId === entry.id}
   {@const progress = isInstalling ? downloadProgress : null}
   {@const logo = getModelLogo(entry.id)}
+  {@const isPreview = entry.id.includes('v3')}
   <div
     class={cn(
       'flex h-full flex-col rounded-lg border border-[var(--color-base-300)] bg-[var(--color-base-200)] p-4',
@@ -1720,9 +1765,18 @@
         </div>
       {/if}
       <div class="min-w-0 flex-1">
-        <h4 class="text-sm font-semibold text-[var(--color-base-content)]">
-          {entry.name}
-        </h4>
+        <div class="flex items-center gap-2">
+          <h4 class="text-sm font-semibold text-[var(--color-base-content)]">
+            {entry.name}
+          </h4>
+          {#if isPreview}
+            <span
+              class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[var(--color-warning)]/15 text-[var(--color-warning)]"
+            >
+              {t('analysis.gallery.preview')}
+            </span>
+          {/if}
+        </div>
         <p class="mt-0.5 line-clamp-2 text-xs text-[var(--color-base-content)]/80">
           {entry.description}
         </p>

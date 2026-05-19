@@ -75,6 +75,8 @@
     onRefresh?: () => void;
     onNumResultsChange?: (_numResults: number) => void;
     onSortChange?: (_sortBy: DetectionSortBy) => void;
+    onModelVersionChange?: (_version: string) => void;
+    modelVersion?: string;
     className?: string;
   }
 
@@ -87,6 +89,8 @@
     onRefresh,
     onNumResultsChange,
     onSortChange,
+    onModelVersionChange,
+    modelVersion = '',
     className = '',
   }: Props = $props();
 
@@ -129,6 +133,17 @@
     { value: '50', label: '50' },
     { value: '100', label: '100' },
   ];
+
+  const MODEL_VERSION_OPTIONS = [
+    { value: '', label: t('detections.filters.allModels') },
+    { value: '2.4', label: 'BirdNET v2.4' },
+    { value: '3.0', label: 'BirdNET v3.0' },
+  ];
+
+  function handleModelVersionChange(value: string | string[]) {
+    const version = value as string;
+    onModelVersionChange?.(version);
+  }
 
   function handleNumResultsChange(value: string | string[]) {
     const numResults = parseInt(value as string);
@@ -462,6 +477,20 @@
               <CheckSquare class="size-4" />
               <span>{t('detections.selection.select')}</span>
             </button>
+          </div>
+        {/if}
+
+        {#if onModelVersionChange}
+          <div class="hidden md:block">
+            <SelectDropdown
+              options={MODEL_VERSION_OPTIONS}
+              value={modelVersion}
+              size="sm"
+              menuSize="sm"
+              variant="button"
+              className="w-36"
+              onChange={handleModelVersionChange}
+            />
           </div>
         {/if}
 
