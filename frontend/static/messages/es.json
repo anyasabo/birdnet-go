@@ -814,6 +814,9 @@
     "pagination": {
       "showing": "Mostrando {from} a {to} de {total} resultados"
     },
+    "filters": {
+      "allModels": "All models"
+    },
     "selection": {
       "select": "Seleccionar",
       "nSelected": "{count} seleccionadas",
@@ -4684,7 +4687,14 @@
       "geomodelBadge": "Incluye BirdNET v3.0 geomodel",
       "onnxRuntimeRequired": "Requiere ONNX Runtime, que no está disponible en este sistema.",
       "onnxRuntimeMissing": "ONNX Runtime no está disponible. Este modelo no puede ejecutarse.",
-      "unavailable": "No disponible"
+      "unavailable": "No disponible",
+      "preview": "Preview",
+      "sideBySide": {
+        "title": "Side-by-Side Comparison",
+        "active": "BirdNET v2.4 and v3.0 are both running. Detections are tagged by model version.",
+        "inactive": "Install BirdNET v3.0 from the Available tab to enable side-by-side comparison with v2.4.",
+        "enabled": "Active"
+      }
     },
     "bird": {
       "title": "Detección de aves",

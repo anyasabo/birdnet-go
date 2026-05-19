@@ -21,6 +21,7 @@ type AdvancedSearchFilters struct {
 	Species       []string
 	Location      []string // Maps to source_node column
 	Locked        *bool
+	ModelVersion  string // Filter by model version (e.g., "2.4", "3.0"); empty = all models
 	SortAscending bool
 	SortBy        string // "date_desc", "date_asc", "species_asc", "species_desc", "confidence_asc", "confidence_desc", "status"
 	Limit         int
@@ -104,6 +105,12 @@ func (ds *DataStore) SearchNotesAdvanced(filters *AdvancedSearchFilters) ([]Note
 
 	// Apply locked filter
 	query = applyLockedFilter(query, filters.Locked)
+
+	// Apply model version filter (joins ai_models table)
+	if filters.ModelVersion != "" {
+		query = query.Joins("LEFT JOIN ai_models ON ai_models.id = notes.ai_model_id").
+			Where("ai_models.version = ?", filters.ModelVersion)
+	}
 
 	// Apply MinID filter for cursor-based pagination (used by migration worker)
 	if filters.MinID > 0 {

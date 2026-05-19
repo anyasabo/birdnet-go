@@ -814,6 +814,9 @@
     "pagination": {
       "showing": "Viser {from} til {to} af {total} resultater"
     },
+    "filters": {
+      "allModels": "All models"
+    },
     "selection": {
       "select": "Vælg",
       "nSelected": "{count} valgt",
@@ -4684,7 +4687,14 @@
       "geomodelBadge": "Inkluderer BirdNET v3.0 geomodel",
       "onnxRuntimeRequired": "Kræver ONNX Runtime, som ikke er tilgængelig på dette system.",
       "onnxRuntimeMissing": "ONNX Runtime er ikke tilgængelig. Denne model kan ikke køre.",
-      "unavailable": "Ikke tilgængelig"
+      "unavailable": "Ikke tilgængelig",
+      "preview": "Preview",
+      "sideBySide": {
+        "title": "Side-by-Side Comparison",
+        "active": "BirdNET v2.4 and v3.0 are both running. Detections are tagged by model version.",
+        "inactive": "Install BirdNET v3.0 from the Available tab to enable side-by-side comparison with v2.4.",
+        "enabled": "Active"
+      }
     },
     "bird": {
       "title": "Fugleregistrering",

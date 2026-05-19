@@ -814,6 +814,9 @@
     "pagination": {
       "showing": "Näytetään {from}-{to} / {total} tuloksesta"
     },
+    "filters": {
+      "allModels": "All models"
+    },
     "selection": {
       "select": "Valitse",
       "nSelected": "{count} valittu",
@@ -4684,7 +4687,14 @@
       "geomodelBadge": "Sisältää BirdNET v3.0 -geomallin",
       "onnxRuntimeRequired": "Vaatii ONNX Runtimen, joka ei ole käytettävissä tässä järjestelmässä.",
       "onnxRuntimeMissing": "ONNX Runtime ei ole käytettävissä. Tätä mallia ei voi suorittaa.",
-      "unavailable": "Ei käytettävissä"
+      "unavailable": "Ei käytettävissä",
+      "preview": "Preview",
+      "sideBySide": {
+        "title": "Side-by-Side Comparison",
+        "active": "BirdNET v2.4 and v3.0 are both running. Detections are tagged by model version.",
+        "inactive": "Install BirdNET v3.0 from the Available tab to enable side-by-side comparison with v2.4.",
+        "enabled": "Active"
+      }
     },
     "bird": {
       "title": "Lintuhavainnot",

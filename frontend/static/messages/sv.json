@@ -814,6 +814,9 @@
     "pagination": {
       "showing": "Visar {from} till {to} av {total} resultat"
     },
+    "filters": {
+      "allModels": "All models"
+    },
     "selection": {
       "select": "Välj",
       "nSelected": "{count} valda",
@@ -4684,7 +4687,14 @@
       "geomodelBadge": "Inkluderar BirdNET v3.0 geomodell",
       "onnxRuntimeRequired": "Kräver ONNX Runtime som inte är tillgängligt på detta system.",
       "onnxRuntimeMissing": "ONNX Runtime är inte tillgängligt. Denna modell kan inte köras.",
-      "unavailable": "Ej tillgänglig"
+      "unavailable": "Ej tillgänglig",
+      "preview": "Preview",
+      "sideBySide": {
+        "title": "Side-by-Side Comparison",
+        "active": "BirdNET v2.4 and v3.0 are both running. Detections are tagged by model version.",
+        "inactive": "Install BirdNET v3.0 from the Available tab to enable side-by-side comparison with v2.4.",
+        "enabled": "Active"
+      }
     },
     "bird": {
       "title": "Fågeldetektering",

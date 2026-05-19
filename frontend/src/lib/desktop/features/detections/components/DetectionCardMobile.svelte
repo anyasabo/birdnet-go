@@ -68,8 +68,17 @@
     <!-- Header: Names and confidence -->
     <div class="flex items-start gap-3">
       <div class="flex-1 min-w-0">
-        <div class="text-base font-semibold leading-tight truncate">
-          {detection.commonName}
+        <div class="flex items-center gap-1.5">
+          <div class="text-base font-semibold leading-tight truncate">
+            {detection.commonName}
+          </div>
+          {#if detection.modelVersion && detection.modelVersion !== '2.4'}
+            <span
+              class="inline-flex items-center shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none bg-[var(--color-info)]/15 text-[var(--color-info)]"
+            >
+              v{detection.modelVersion}
+            </span>
+          {/if}
         </div>
         <div class="text-xs opacity-70 truncate">
           {detection.scientificName}

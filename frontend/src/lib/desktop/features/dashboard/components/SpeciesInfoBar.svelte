@@ -65,6 +65,9 @@
     <!-- Name row with verification badge -->
     <div class="species-name-row">
       <span class="species-name">{detection.commonName}</span>
+      {#if detection.modelVersion && detection.modelVersion !== '2.4'}
+        <span class="model-version-badge">v{detection.modelVersion}</span>
+      {/if}
       {#if isVerified}
         <span
           class="verified-badge"
@@ -210,6 +213,18 @@
     color: white;
     font-size: 0.625rem;
     font-weight: 500;
+  }
+
+  .model-version-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0.375rem;
+    height: 1rem;
+    border-radius: 9999px;
+    background-color: rgb(59 130 246 / 0.25);
+    color: rgb(191 219 254);
+    font-size: 0.625rem;
+    font-weight: 600;
   }
 
   .scientific-name {

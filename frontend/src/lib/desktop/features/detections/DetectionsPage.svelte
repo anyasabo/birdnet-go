@@ -18,6 +18,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let selectedModelVersion = $state('');
 
   // Local storage keys for user preferences
   const RESULTS_PER_PAGE_KEY = 'birdnet-detections-results-per-page';
@@ -99,6 +100,7 @@
       numResults,
       offset: parseInt(params.get('offset') || '0'),
       sortBy,
+      model_version: params.get('model_version') || undefined,
     };
   }
 
@@ -199,6 +201,22 @@
     }, 300); // 300ms debounce delay
   }
 
+  // Handle model version filter change
+  function handleModelVersionChange(version: string) {
+    selectedModelVersion = version;
+
+    const params = new URLSearchParams(window.location.search);
+    if (version) {
+      params.set('model_version', version);
+    } else {
+      params.delete('model_version');
+    }
+    params.set('offset', '0');
+
+    window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+    fetchDetections();
+  }
+
   // Handle sort change from DetectionsList
   function handleSortChange(newSortBy: DetectionSortBy) {
     // Save preference to localStorage
@@ -251,6 +269,10 @@
   }
 
   onMount(() => {
+    // Initialize model version from URL
+    const params = new URLSearchParams(window.location.search);
+    selectedModelVersion = params.get('model_version') ?? '';
+
     fetchDetections();
 
     // Listen for search updates from SearchBox
@@ -281,5 +303,7 @@
     onRefresh={fetchDetections}
     onNumResultsChange={handleNumResultsChange}
     onSortChange={handleSortChange}
+    onModelVersionChange={handleModelVersionChange}
+    modelVersion={selectedModelVersion}
   />
 </div>

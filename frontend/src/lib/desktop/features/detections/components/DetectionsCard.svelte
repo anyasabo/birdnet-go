@@ -11,6 +11,8 @@
     onRefresh: () => void;
     onNumResultsChange: (_numResults: number) => void;
     onSortChange?: (_sortBy: DetectionSortBy) => void;
+    onModelVersionChange?: (_version: string) => void;
+    modelVersion?: string;
   }
 
   let {
@@ -22,6 +24,8 @@
     onRefresh,
     onNumResultsChange,
     onSortChange,
+    onModelVersionChange,
+    modelVersion = '',
   }: Props = $props();
 </script>
 
@@ -36,6 +40,8 @@
       {onRefresh}
       {onNumResultsChange}
       {onSortChange}
+      {onModelVersionChange}
+      {modelVersion}
     />
   </div>
 </section>

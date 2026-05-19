@@ -398,12 +398,22 @@
     <!-- Species Names -->
     <div class="sp-species-info-wrapper">
       <div class="sp-species-names">
-        <button
-          onclick={handleDetailsClick}
-          class="sp-species-common-name hover:text-primary transition-colors cursor-pointer text-left"
-        >
-          {detection.commonName}
-        </button>
+        <div class="flex items-center gap-1.5">
+          <button
+            onclick={handleDetailsClick}
+            class="sp-species-common-name hover:text-primary transition-colors cursor-pointer text-left"
+          >
+            {detection.commonName}
+          </button>
+          {#if detection.modelVersion && detection.modelVersion !== '2.4'}
+            <span
+              class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none bg-[var(--color-info)]/15 text-[var(--color-info)]"
+              title="Detected by BirdNET v{detection.modelVersion}"
+            >
+              v{detection.modelVersion}
+            </span>
+          {/if}
+        </div>
         <div class="sp-species-scientific-name">{detection.scientificName}</div>
       </div>
       <!-- Mobile-only quick play button -->

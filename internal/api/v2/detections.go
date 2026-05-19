@@ -256,12 +256,13 @@ type detectionQueryParams struct {
 	Offset     int
 	QueryType  string
 	// Advanced filter parameters
-	Confidence string
-	TimeOfDay  string
-	HourRange  string
-	Verified   string
-	Location   string
-	Locked     string
+	Confidence   string
+	TimeOfDay    string
+	HourRange    string
+	Verified     string
+	Location     string
+	Locked       string
+	ModelVersion string // Filter by model version (e.g., "2.4", "3.0")
 	// Sorting
 	SortBy string
 	// Include additional data
@@ -271,12 +272,12 @@ type detectionQueryParams struct {
 // advancedSearchCacheKey generates a deterministic cache key for advanced search queries.
 // Includes all filter parameters to avoid cache collisions.
 func (p *detectionQueryParams) advancedSearchCacheKey() string {
-	return fmt.Sprintf("adv_search:%s:%d:%d:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d",
+	return fmt.Sprintf("adv_search:%s:%d:%d:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d",
 		p.Search, p.NumResults, p.Offset,
 		p.Confidence, p.TimeOfDay, p.HourRange,
 		p.Verified, p.Location, p.Locked,
 		p.Species, p.Date, p.StartDate+":"+p.EndDate,
-		p.SortBy, p.QueryType, p.Hour, p.Duration)
+		p.SortBy, p.QueryType, p.ModelVersion, p.Hour, p.Duration)
 }
 
 // parseDetectionQueryParams extracts and validates query parameters from the request
@@ -290,12 +291,13 @@ func (c *Controller) parseDetectionQueryParams(ctx echo.Context) (*detectionQuer
 		EndDate:   ctx.QueryParam("end_date"),
 		QueryType: ctx.QueryParam("queryType"),
 		// Advanced filter parameters
-		Confidence: ctx.QueryParam("confidence"),
-		TimeOfDay:  ctx.QueryParam("timeOfDay"),
-		HourRange:  ctx.QueryParam("hourRange"),
-		Verified:   ctx.QueryParam("verified"),
-		Location:   ctx.QueryParam("location"),
-		Locked:     ctx.QueryParam("locked"),
+		Confidence:   ctx.QueryParam("confidence"),
+		TimeOfDay:    ctx.QueryParam("timeOfDay"),
+		HourRange:    ctx.QueryParam("hourRange"),
+		Verified:     ctx.QueryParam("verified"),
+		Location:     ctx.QueryParam("location"),
+		Locked:       ctx.QueryParam("locked"),
+		ModelVersion: ctx.QueryParam("model_version"),
 		// Sorting
 		SortBy: ctx.QueryParam("sortBy"),
 		// Include weather data
@@ -610,6 +612,7 @@ func (p *detectionQueryParams) needsAdvancedRouting() bool {
 	if p.Confidence != "" || p.TimeOfDay != "" ||
 		p.HourRange != "" || p.Verified != "" ||
 		p.Location != "" || p.Locked != "" ||
+		p.ModelVersion != "" ||
 		p.StartDate != "" || p.EndDate != "" {
 		return true
 	}
@@ -1101,6 +1104,9 @@ func (c *Controller) buildAdvancedSearchFilters(params *detectionQueryParams) da
 		locked := params.Locked == QueryValueTrue
 		filters.Locked = &locked
 	}
+
+	// Apply model version filter
+	filters.ModelVersion = params.ModelVersion
 
 	// Apply sorting
 	filters.SortBy = params.SortBy

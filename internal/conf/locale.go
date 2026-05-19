@@ -30,6 +30,10 @@ var ModelLabelMapping = map[string]LabelConfig{
 		FilePattern: "BirdNET_GLOBAL_6K_V2.4_Labels_%s.txt",
 		BasePath:    "V2.4/",
 	},
+	"BirdNET_V3.0": {
+		FilePattern: "BirdNET_V3.0_Labels_%s.txt",
+		BasePath:    "V3.0/",
+	},
 }
 
 // IMPORTANT: When adding or modifying locale entries, also update the locale_codes and locale_names arrays
