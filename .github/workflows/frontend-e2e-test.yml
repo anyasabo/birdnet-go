@@ -22,11 +22,9 @@ permissions:
 
 jobs:
   e2e-tests:
-    # Disabled: E2E tests consistently time out — backend endpoints unavailable in CI
-    if: false
     name: E2E Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -95,7 +93,7 @@ jobs:
       - name: Run Playwright E2E tests
         working-directory: frontend
         run: npx playwright test --project=chromium
-        timeout-minutes: 7
+        timeout-minutes: 15
         env:
           CI: 'true'
 

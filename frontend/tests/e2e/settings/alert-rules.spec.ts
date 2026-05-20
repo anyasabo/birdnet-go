@@ -1,5 +1,34 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 
+/** Cached CSRF credentials for state-changing API requests. */
+let cachedCsrf: { token: string; cookie: string } | null = null;
+
+async function getCsrfHeaders(
+  request: APIRequestContext
+): Promise<Record<string, string>> {
+  if (!cachedCsrf) {
+    try {
+      const baseUrl = process.env['BASE_URL'] ?? 'http://localhost:8080';
+      const resp = await request.get(`${baseUrl}/api/v2/app/config`, { timeout: 5000 });
+      if (resp.ok()) {
+        const data = await resp.json();
+        const setCookie = resp.headers()['set-cookie'] ?? '';
+        const match = setCookie.match(/csrf=([^;]+)/);
+        if (data.csrfToken && match?.[1]) {
+          cachedCsrf = { token: data.csrfToken, cookie: `csrf=${match[1]}` };
+        }
+      }
+    } catch {
+      // CSRF fetch failed
+    }
+  }
+  if (!cachedCsrf) return {};
+  return {
+    'X-CSRF-Token': cachedCsrf.token,
+    Cookie: cachedCsrf.cookie,
+  };
+}
+
 test.describe('Alert Rules Settings Page', () => {
   test.setTimeout(30000);
 
@@ -73,7 +102,7 @@ test.describe('Alert Rules Settings Page', () => {
     const newRuleButton = rulesPanel.locator('button:has-text("New")').first();
     await expect(newRuleButton).toBeVisible({ timeout: 5000 });
     await newRuleButton.click();
-    const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]');
+    const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]').first();
     await expect(editor).toBeVisible({ timeout: 5000 });
     return editor;
   }
@@ -108,8 +137,10 @@ test.describe('Alert Rules Settings Page', () => {
       actions: [{ target: 'bell', template_title: '', template_message: '', sort_order: 0 }],
     };
 
+    const csrfHeaders = await getCsrfHeaders(request);
     const resp = await request.post('/api/v2/alerts/rules', {
       data: rule,
+      headers: csrfHeaders,
       timeout: 10000,
     });
     expect(resp.ok(), `Failed to create test rule: ${resp.status()}`).toBeTruthy();
@@ -123,7 +154,11 @@ test.describe('Alert Rules Settings Page', () => {
   async function deleteTestRule(request: APIRequestContext, id: number | null) {
     if (!id) return;
     try {
-      await request.delete(`/api/v2/alerts/rules/${id}`, { timeout: 5000 });
+      const csrfHeaders = await getCsrfHeaders(request);
+      await request.delete(`/api/v2/alerts/rules/${id}`, {
+        headers: csrfHeaders,
+        timeout: 5000,
+      });
     } catch {
       // Cleanup failure is acceptable
     }
@@ -274,6 +309,8 @@ test.describe('Alert Rules Settings Page', () => {
     });
 
     test('alert rules CRUD operations work end-to-end', async ({ request }) => {
+      const csrfHeaders = await getCsrfHeaders(request);
+
       // Create
       const schema = await getSchema(request);
       const objectType = schema.objectTypes[0];
@@ -293,6 +330,7 @@ test.describe('Alert Rules Settings Page', () => {
           conditions: [],
           actions: [{ target: 'bell', template_title: '', template_message: '', sort_order: 0 }],
         },
+        headers: csrfHeaders,
         timeout: 10000,
       });
       expect(createResp.ok(), `Create failed: ${createResp.status()}`).toBeTruthy();
@@ -311,6 +349,7 @@ test.describe('Alert Rules Settings Page', () => {
         // Update
         const updateResp = await request.put(`/api/v2/alerts/rules/${ruleId}`, {
           data: { ...fetched, description: 'Updated CRUD test' },
+          headers: csrfHeaders,
           timeout: 10000,
         });
         expect(updateResp.ok()).toBeTruthy();
@@ -320,12 +359,14 @@ test.describe('Alert Rules Settings Page', () => {
         // Toggle
         const toggleResp = await request.patch(`/api/v2/alerts/rules/${ruleId}/toggle`, {
           data: { enabled: false },
+          headers: csrfHeaders,
           timeout: 10000,
         });
         expect(toggleResp.ok()).toBeTruthy();
 
         // Delete
         const deleteResp = await request.delete(`/api/v2/alerts/rules/${ruleId}`, {
+          headers: csrfHeaders,
           timeout: 10000,
         });
         expect(deleteResp.ok()).toBeTruthy();
@@ -354,8 +395,10 @@ test.describe('Alert Rules Settings Page', () => {
       expect(Array.isArray(exported.rules)).toBe(true);
 
       // Import should work with valid data (may skip duplicates)
+      const csrfHeaders = await getCsrfHeaders(request);
       const importResp = await request.post('/api/v2/alerts/rules/import', {
         data: { rules: [], version: exported.version },
+        headers: csrfHeaders,
         timeout: 10000,
       });
       expect(importResp.ok()).toBeTruthy();
@@ -811,7 +854,7 @@ test.describe('Alert Rules Settings Page', () => {
 
         // Editor should open
         const rulesPanel = page.locator('#settings-tabpanel-rules');
-        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]');
+        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]').first();
         await expect(editor).toBeVisible({ timeout: 5000 });
 
         // Name should be pre-populated
@@ -850,7 +893,7 @@ test.describe('Alert Rules Settings Page', () => {
         await editButton.click();
 
         const rulesPanel = page.locator('#settings-tabpanel-rules');
-        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]');
+        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]').first();
         await expect(editor).toBeVisible({ timeout: 5000 });
 
         const cryptoErrors = errors.filter(e => e.includes('randomUUID') || e.includes('crypto'));
@@ -915,7 +958,7 @@ test.describe('Alert Rules Settings Page', () => {
         await editButton.click();
 
         const rulesPanel = page.locator('#settings-tabpanel-rules');
-        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]');
+        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]').first();
         await expect(editor).toBeVisible({ timeout: 5000 });
 
         // If conditions section is visible, the "Add Condition" button should be present
@@ -957,7 +1000,7 @@ test.describe('Alert Rules Settings Page', () => {
         await editButton.click();
 
         const rulesPanel = page.locator('#settings-tabpanel-rules');
-        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]');
+        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]').first();
         await expect(editor).toBeVisible({ timeout: 5000 });
 
         const addConditionButton = editor.locator('button:has-text("Add")').first();
@@ -1007,7 +1050,7 @@ test.describe('Alert Rules Settings Page', () => {
         await editButton.click();
 
         const rulesPanel = page.locator('#settings-tabpanel-rules');
-        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]');
+        const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]').first();
         await expect(editor).toBeVisible({ timeout: 5000 });
 
         const addConditionButton = editor.locator('button:has-text("Add")').first();
@@ -1286,7 +1329,7 @@ test.describe('Alert Rules Settings Page', () => {
       // Open and close editor
       await openNewRuleEditor(page);
       const rulesPanel = page.locator('#settings-tabpanel-rules');
-      const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]');
+      const editor = rulesPanel.locator('.border-\\[var\\(--color-primary\\)\\]').first();
       await editor.locator('button:has-text("Cancel")').click();
       await expect(editor).not.toBeVisible({ timeout: 5000 });
 

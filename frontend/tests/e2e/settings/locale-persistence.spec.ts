@@ -63,35 +63,28 @@ const getStoredLocale = (page: Page): Promise<string | null> =>
  * then click the option with the matching locale name.
  */
 const selectLocale = async (page: Page, localeName: string) => {
-  // The LanguageSelector renders a SelectDropdown. The trigger is a <button>
-  // with aria-haspopup="listbox". We find it by looking for the button that
-  // currently shows a locale name (it renders the selected locale's name).
-  // There may be multiple buttons with aria-haspopup; we find the one inside
-  // a container that shows flag icons and locale names.
+  // The LanguageSelector is on the "Language & Regional" tab within the User Interface
+  // settings page. Click it first to make the locale dropdown visible.
+  const tablist = page.locator('[role="tablist"]');
+  await expect(tablist).toBeVisible({ timeout: 10000 });
+  const languageTab = tablist.locator('button[role="tab"]').filter({ hasText: /language/i });
+  await expect(languageTab).toBeVisible({ timeout: 5000 });
+  await languageTab.click();
+  await page.waitForTimeout(500);
 
-  // Find the language selector button - it contains the flag and language name
-  // and has aria-haspopup="listbox"
-  const languageSelectorButton = page.locator('button[aria-haspopup="listbox"]').filter({
-    has: page.locator('img[alt*="flag"], svg, span'),
-  });
-
-  // If there are multiple matching buttons, use the first visible one
-  // that contains a known locale name
+  // Find the language selector by iterating dropdown buttons to find one
+  // containing a known locale name
   const allButtons = page.locator('button[aria-haspopup="listbox"]');
   const buttonCount = await allButtons.count();
 
-  let selectorButton = languageSelectorButton.first();
-
-  // Fallback: iterate to find the button that contains a known locale name
-  if (buttonCount > 1) {
-    for (let i = 0; i < buttonCount; i++) {
-      const btn = allButtons.nth(i);
-      const text = await btn.textContent();
-      const isLocaleButton = LOCALE_DATA.some(l => text?.includes(l.name));
-      if (isLocaleButton) {
-        selectorButton = btn;
-        break;
-      }
+  let selectorButton = allButtons.first();
+  for (let i = 0; i < buttonCount; i++) {
+    const btn = allButtons.nth(i);
+    const text = await btn.textContent();
+    const isLocaleButton = LOCALE_DATA.some(l => text?.includes(l.name));
+    if (isLocaleButton) {
+      selectorButton = btn;
+      break;
     }
   }
 
@@ -134,12 +127,28 @@ test.describe('Locale Persistence', () => {
     test(`locale "${locale.code}" (${locale.name}) persists after page reload`, async ({
       page,
     }) => {
-      // Navigate to settings page where the LanguageSelector is accessible
-      await page.goto('/ui/settings', { timeout: 15000 });
+      // Navigate to User Interface settings where the LanguageSelector lives
+      await page.goto('/ui/settings/userinterface', { timeout: 15000 });
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
 
       // Select the target locale via the dropdown
       await selectLocale(page, locale.name);
+
+      // The locale change requires saving settings to persist.
+      // Use the toolbar to find Save button (its text may already be translated).
+      const toolbar = page.locator('[role="toolbar"]');
+      const saveButton = toolbar.locator('button').last();
+      await expect(saveButton).toBeEnabled({ timeout: 5000 });
+
+      // Wait for the settings API response after clicking save
+      const savePromise = page.waitForResponse(
+        resp => resp.url().includes('/api/v2/settings') && resp.request().method() === 'PUT',
+        { timeout: 15000 }
+      );
+      await saveButton.click();
+      await savePromise;
+      // Brief pause for the setLocale side-effect to write localStorage
+      await page.waitForTimeout(500);
 
       // Verify localStorage was set correctly
       const storedLocale = await getStoredLocale(page);

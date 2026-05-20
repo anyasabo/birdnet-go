@@ -19,6 +19,9 @@ const IGNORED_ERROR_PATTERNS: RegExp[] = [
   /SSE connection error/,
   // Chromium-internal permissions policy warning, not from application code.
   /Permissions policy violation/,
+  // Rate-limited responses from the backend when multiple tests run in parallel.
+  /429.*Too Many Requests/,
+  /the server responded with a status of 429/,
 ];
 
 function isIgnoredError(message: string): boolean {
