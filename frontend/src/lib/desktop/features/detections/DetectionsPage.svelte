@@ -99,6 +99,7 @@
       numResults,
       offset: parseInt(params.get('offset') || '0'),
       sortBy,
+      model_version: params.get('model_version') || undefined,
     };
   }
 
@@ -218,6 +219,20 @@
     fetchDetections();
   }
 
+  // Handle model version filter change
+  function handleModelVersionChange(version: string) {
+    const params = new URLSearchParams(window.location.search);
+    if (version) {
+      params.set('model_version', version);
+    } else {
+      params.delete('model_version');
+    }
+    params.set('offset', '0');
+
+    window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+    fetchDetections();
+  }
+
   // Handle details click
   function handleDetailsClick(id: number) {
     // Navigate to detection details page
@@ -281,5 +296,6 @@
     onRefresh={fetchDetections}
     onNumResultsChange={handleNumResultsChange}
     onSortChange={handleSortChange}
+    onModelVersionChange={handleModelVersionChange}
   />
 </div>

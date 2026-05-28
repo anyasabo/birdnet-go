@@ -796,6 +796,11 @@
     "status": {
       "locked": "Locked"
     },
+    "modelVersion": {
+      "label": "Model",
+      "all": "All models",
+      "badge": "v{version}"
+    },
     "timeOfDay": {
       "day": "Day",
       "night": "Night",

@@ -264,6 +264,7 @@ var sentinelNoMatchIDs = []uint{0}
 type FilterLookupDeps struct {
 	LabelRepo   LabelRepository
 	SourceRepo  AudioSourceRepository
+	ModelRepo   ModelRepository
 	SciToCommon map[string]string
 }
 
@@ -720,7 +721,30 @@ func ConvertAdvancedFilters(
 		if err != nil {
 			return nil, err
 		}
+
+		// Convert model version string to model ID
+		if filters.ModelVersion != "" && deps.ModelRepo != nil {
+			sf.ModelID, err = ResolveModelVersionToID(ctx, deps, filters.ModelVersion)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return sf, nil
+}
+
+// ResolveModelVersionToID converts a model version string (e.g., "2.4", "3.0")
+// to a model ID by looking up "BirdNET" + version in the ai_models table.
+func ResolveModelVersionToID(ctx context.Context, deps *FilterLookupDeps, version string) (*uint, error) {
+	if version == "" || deps == nil || deps.ModelRepo == nil {
+		return nil, nil
+	}
+
+	model, err := deps.ModelRepo.GetByNameVersionVariant(ctx, "BirdNET", version, "default")
+	if err != nil {
+		return nil, nil //nolint:nilerr // model not found means no results to filter
+	}
+
+	return &model.ID, nil
 }

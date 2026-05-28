@@ -65,11 +65,12 @@ var (
 // ValidAudioModels contains recognized AI model identifiers.
 // Empty string is also valid (defaults to birdnet).
 var ValidAudioModels = map[string]bool{
-	"":             true, // default (birdnet)
-	ModelIDBirdNET: true,
-	ModelIDPerchV2: true,
-	ModelIDBat:     true,
-	ModelIDBSG:     true,
+	"":               true, // default (birdnet)
+	ModelIDBirdNET:   true,
+	ModelIDBirdNETv3: true,
+	ModelIDPerchV2:   true,
+	ModelIDBat:       true,
+	ModelIDBSG:       true,
 }
 
 // ValidationError represents a collection of validation errors

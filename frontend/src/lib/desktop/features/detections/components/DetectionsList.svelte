@@ -75,6 +75,7 @@
     onRefresh?: () => void;
     onNumResultsChange?: (_numResults: number) => void;
     onSortChange?: (_sortBy: DetectionSortBy) => void;
+    onModelVersionChange?: (_version: string) => void;
     className?: string;
   }
 
@@ -87,6 +88,7 @@
     onRefresh,
     onNumResultsChange,
     onSortChange,
+    onModelVersionChange,
     className = '',
   }: Props = $props();
 
@@ -130,6 +132,12 @@
     { value: '100', label: '100' },
   ];
 
+  const MODEL_VERSION_OPTIONS = [
+    { value: '', label: t('detections.modelVersion.all') },
+    { value: '2.4', label: 'v2.4' },
+    { value: '3.0', label: 'v3.0' },
+  ];
+
   function handleNumResultsChange(value: string | string[]) {
     const numResults = parseInt(value as string);
     if (isNaN(numResults) || ![10, 25, 50, 100].includes(numResults)) return;
@@ -138,9 +146,22 @@
     onNumResultsChange?.(numResults);
   }
 
+  function handleModelVersionChange(value: string | string[]) {
+    const version = value as string;
+    selectedModelVersion = version;
+    selection.clear();
+    onModelVersionChange?.(version);
+  }
+
   // State for number of results - captures initial value without creating dependency
   // Uses untrack() to explicitly capture initial value only (local state is independent after init)
   let selectedNumResults = $state(untrack(() => String(data?.numResults ?? 25)));
+
+  let selectedModelVersion = $state(
+    typeof window !== 'undefined'
+      ? (new URLSearchParams(window.location.search).get('model_version') ?? '')
+      : ''
+  );
 
   // --- View mode state (persisted in localStorage) ---
   const VIEW_STORAGE_KEY = 'detectionsViewMode';
@@ -469,6 +490,16 @@
         <div class="hidden md:block">
           <ViewToggle view={viewMode} onViewChange={handleViewChange} />
         </div>
+
+        <SelectDropdown
+          options={MODEL_VERSION_OPTIONS}
+          value={selectedModelVersion}
+          size="sm"
+          menuSize="sm"
+          variant="button"
+          className="w-28"
+          onChange={handleModelVersionChange}
+        />
 
         <SelectDropdown
           options={RESULTS_OPTIONS}

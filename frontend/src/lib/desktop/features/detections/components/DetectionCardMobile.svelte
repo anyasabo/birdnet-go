@@ -68,8 +68,13 @@
     <!-- Header: Names and confidence -->
     <div class="flex items-start gap-3">
       <div class="flex-1 min-w-0">
-        <div class="text-base font-semibold leading-tight truncate">
-          {detection.commonName}
+        <div class="flex items-center gap-1.5 text-base font-semibold leading-tight truncate">
+          <span class="truncate">{detection.commonName}</span>
+          {#if detection.modelVersion}
+            <span class="inline-flex items-center shrink-0 rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10 dark:bg-blue-400/10 dark:text-blue-400 dark:ring-blue-400/30">
+              {t('detections.modelVersion.badge', { version: detection.modelVersion })}
+            </span>
+          {/if}
         </div>
         <div class="text-xs opacity-70 truncate">
           {detection.scientificName}

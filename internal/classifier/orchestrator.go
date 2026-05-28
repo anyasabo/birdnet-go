@@ -736,8 +736,9 @@ func (o *Orchestrator) IsModelLoaded(registryID string) bool {
 // this map are recognized but not yet implemented; callers log a warning
 // and skip. Adding a new loader only requires one entry here.
 var modelLoaders = map[string]func(o *Orchestrator, threads int) error{
-	RegistryIDPerchV2: (*Orchestrator).loadPerch,
-	RegistryIDBat:     (*Orchestrator).loadBat,
+	RegistryIDPerchV2:   (*Orchestrator).loadPerch,
+	RegistryIDBat:       (*Orchestrator).loadBat,
+	RegistryIDBirdNETV3: (*Orchestrator).loadBirdNETv3,
 }
 
 // LoadModel dynamically loads a model into the Orchestrator at runtime.

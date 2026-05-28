@@ -1412,6 +1412,7 @@ func (ds *Datastore) SearchNotesAdvanced(filters *datastore.AdvancedSearchFilter
 	deps := &repository.FilterLookupDeps{
 		LabelRepo:  ds.label,
 		SourceRepo: ds.source,
+		ModelRepo:  ds.model,
 	}
 
 	// Convert API-level filters to repository filters
