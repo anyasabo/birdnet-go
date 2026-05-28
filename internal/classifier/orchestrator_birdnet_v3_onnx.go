@@ -42,6 +42,9 @@ func (o *Orchestrator) loadBirdNETv3(threads int) error {
 	v3Settings.BirdNET.LabelPath = labelPath
 	v3Settings.BirdNET.Threads = threads
 
+	if o.Settings.BirdNETv3.Threshold > 0 {
+		v3Settings.BirdNET.Threshold = o.Settings.BirdNETv3.Threshold
+	}
 	if o.Settings.BirdNETv3.Locale != "" {
 		v3Settings.BirdNET.Locale = o.Settings.BirdNETv3.Locale
 	}

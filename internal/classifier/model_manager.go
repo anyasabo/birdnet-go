@@ -197,6 +197,9 @@ func (mm *ModelManager) ScanInstalled() {
 		if updated.BSG.ModelPath != "" {
 			addIfMissing(conf.ModelIDBSG)
 		}
+		if updated.BirdNETv3.ModelPath != "" {
+			addIfMissing(conf.ModelIDBirdNETv3)
+		}
 
 		if changed {
 			conf.StoreSettings(updated)
