@@ -75,6 +75,7 @@
     onRefresh?: () => void;
     onNumResultsChange?: (_numResults: number) => void;
     onSortChange?: (_sortBy: DetectionSortBy) => void;
+    onModelVersionChange?: (_version: string) => void;
     className?: string;
   }
 
@@ -87,6 +88,7 @@
     onRefresh,
     onNumResultsChange,
     onSortChange,
+    onModelVersionChange,
     className = '',
   }: Props = $props();
 
@@ -130,6 +132,12 @@
     { value: '100', label: '100' },
   ];
 
+  const MODEL_VERSION_OPTIONS = [
+    { value: '', label: t('detections.modelVersion.all') },
+    { value: '2.4', label: 'v2.4' },
+    { value: '3.0', label: 'v3.0' },
+  ];
+
   function handleNumResultsChange(value: string | string[]) {
     const numResults = parseInt(value as string);
     if (isNaN(numResults) || ![10, 25, 50, 100].includes(numResults)) return;
@@ -138,9 +146,22 @@
     onNumResultsChange?.(numResults);
   }
 
+  function handleModelVersionChange(value: string | string[]) {
+    const version = value as string;
+    selectedModelVersion = version;
+    selection.clear();
+    onModelVersionChange?.(version);
+  }
+
   // State for number of results - captures initial value without creating dependency
   // Uses untrack() to explicitly capture initial value only (local state is independent after init)
   let selectedNumResults = $state(untrack(() => String(data?.numResults ?? 25)));
+
+  let selectedModelVersion = $state(
+    typeof window !== 'undefined'
+      ? (new URLSearchParams(window.location.search).get('model_version') ?? '')
+      : ''
+  );
 
   // --- View mode state (persisted in localStorage) ---
   const VIEW_STORAGE_KEY = 'detectionsViewMode';
@@ -471,6 +492,16 @@
         </div>
 
         <SelectDropdown
+          options={MODEL_VERSION_OPTIONS}
+          value={selectedModelVersion}
+          size="sm"
+          menuSize="sm"
+          variant="button"
+          className="w-28"
+          onChange={handleModelVersionChange}
+        />
+
+        <SelectDropdown
           options={RESULTS_OPTIONS}
           value={selectedNumResults}
           size="sm"
@@ -483,7 +514,8 @@
     </div>
   </div>
 
-  {#if selection.selectionActive && selection.selectedCount > 0}
+  {#if selection.selectionActive}
+    {@const hasSelection = selection.selectedCount > 0}
     <SelectionToolbar
       selectedCount={selection.selectedCount}
       totalCount={data?.totalResults ?? 0}
@@ -494,25 +526,35 @@
       onClear={() => selection.clear()}
     >
       {#snippet actions()}
-        <Button variant="default" size="sm" onclick={handleBulkMarkCorrect}>
-          <CircleCheck class="size-4 text-[var(--color-success)]" />
+        <Button
+          variant="default"
+          size="sm"
+          disabled={!hasSelection}
+          onclick={handleBulkMarkCorrect}
+        >
+          <CircleCheck class="size-4 {hasSelection ? 'text-[var(--color-success)]' : ''}" />
           {t('dashboard.recentDetections.actions.markCorrect')}
         </Button>
-        <Button variant="default" size="sm" onclick={handleBulkMarkFalsePositive}>
-          <CircleX class="size-4 text-[var(--color-error)]" />
+        <Button
+          variant="default"
+          size="sm"
+          disabled={!hasSelection}
+          onclick={handleBulkMarkFalsePositive}
+        >
+          <CircleX class="size-4 {hasSelection ? 'text-[var(--color-error)]' : ''}" />
           {t('dashboard.recentDetections.actions.markFalsePositive')}
         </Button>
-        <Button variant="default" size="sm" onclick={handleBulkLock}>
+        <Button variant="default" size="sm" disabled={!hasSelection} onclick={handleBulkLock}>
           <Lock class="size-4" />
           {t('dashboard.recentDetections.modals.lockDetection')}
         </Button>
-        <Button variant="default" size="sm" onclick={handleBulkUnlock}>
+        <Button variant="default" size="sm" disabled={!hasSelection} onclick={handleBulkUnlock}>
           <LockOpen class="size-4" />
           {t('dashboard.recentDetections.modals.unlockDetection')}
         </Button>
         <div class="w-px h-6 bg-[var(--color-base-300)] mx-1" role="separator"></div>
-        <Button variant="default" size="sm" onclick={handleBulkDelete}>
-          <Trash2 class="size-4 text-[var(--color-error)]" />
+        <Button variant="default" size="sm" disabled={!hasSelection} onclick={handleBulkDelete}>
+          <Trash2 class="size-4 {hasSelection ? 'text-[var(--color-error)]' : ''}" />
           {t('dashboard.recentDetections.actions.deleteDetection')}
         </Button>
       {/snippet}
@@ -522,9 +564,13 @@
   <!-- ARIA live region for accessibility -->
   <div class="sr-only" aria-live="polite">
     {#if loading}
-      Loading {selectedNumResults} results...
+      {t('detections.aria.loadingResults', { count: selectedNumResults })}
     {:else if data}
-      Showing {data.showingFrom} to {data.showingTo} of {data.totalResults} results
+      {t('detections.pagination.showing', {
+        from: data.showingFrom,
+        to: data.showingTo,
+        total: data.totalResults,
+      })}
     {/if}
   </div>
 

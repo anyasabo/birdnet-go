@@ -11,6 +11,7 @@ import (
 
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	"github.com/tphakala/birdnet-go/internal/datastore/v2/entities"
+	"github.com/tphakala/birdnet-go/internal/detection"
 	"github.com/tphakala/birdnet-go/internal/errors"
 	"golang.org/x/text/unicode/norm"
 )
@@ -264,6 +265,7 @@ var sentinelNoMatchIDs = []uint{0}
 type FilterLookupDeps struct {
 	LabelRepo   LabelRepository
 	SourceRepo  AudioSourceRepository
+	ModelRepo   ModelRepository
 	SciToCommon map[string]string
 }
 
@@ -720,7 +722,33 @@ func ConvertAdvancedFilters(
 		if err != nil {
 			return nil, err
 		}
+
+		// Convert model version string to model ID
+		if filters.ModelVersion != "" && deps.ModelRepo != nil {
+			sf.ModelID, err = ResolveModelVersionToID(ctx, deps, filters.ModelVersion)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return sf, nil
+}
+
+// ResolveModelVersionToID converts a model version string (e.g., "2.4", "3.0")
+// to a model ID by looking up "BirdNET" + version in the ai_models table.
+// Returns a zero-value pointer when the model is not found, which produces
+// WHERE model_id = 0 (matching nothing) rather than skipping the filter.
+func ResolveModelVersionToID(ctx context.Context, deps *FilterLookupDeps, version string) (*uint, error) {
+	if version == "" || deps == nil || deps.ModelRepo == nil {
+		return nil, nil
+	}
+
+	model, err := deps.ModelRepo.GetByNameVersionVariant(ctx, detection.DefaultModelName, version, detection.DefaultModelVariant)
+	if err != nil {
+		noMatch := uint(0)
+		return &noMatch, nil //nolint:nilerr // version specified but not in DB → match nothing
+	}
+
+	return &model.ID, nil
 }

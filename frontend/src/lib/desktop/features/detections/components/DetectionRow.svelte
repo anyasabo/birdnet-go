@@ -341,8 +341,8 @@
         <!-- Screen reader announcement for loading state -->
         <span class="sr-only" role="status" aria-live="polite">
           {thumbnailLoader.loading
-            ? `Loading ${detection.commonName} thumbnail...`
-            : `${detection.commonName} thumbnail loaded`}
+            ? t('detections.aria.thumbnailLoading', { species: detection.commonName })
+            : t('detections.aria.thumbnailLoaded', { species: detection.commonName })}
         </span>
 
         <!-- Loading spinner overlay -->
@@ -398,12 +398,19 @@
     <!-- Species Names -->
     <div class="sp-species-info-wrapper">
       <div class="sp-species-names">
-        <button
-          onclick={handleDetailsClick}
-          class="sp-species-common-name hover:text-primary transition-colors cursor-pointer text-left"
-        >
-          {detection.commonName}
-        </button>
+        <div class="flex items-center gap-1.5">
+          <button
+            onclick={handleDetailsClick}
+            class="sp-species-common-name hover:text-primary transition-colors cursor-pointer text-left"
+          >
+            {detection.commonName}
+          </button>
+          {#if detection.modelVersion}
+            <span class="inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10 dark:bg-blue-400/10 dark:text-blue-400 dark:ring-blue-400/30">
+              {t('detections.modelVersion.badge', { version: detection.modelVersion })}
+            </span>
+          {/if}
+        </div>
         <div class="sp-species-scientific-name">{detection.scientificName}</div>
       </div>
       <!-- Mobile-only quick play button -->

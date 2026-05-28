@@ -21,6 +21,7 @@ type AdvancedSearchFilters struct {
 	Species       []string
 	Location      []string // Maps to source_node column
 	Locked        *bool
+	ModelVersion  string   // Filter by AI model version (e.g., "2.4", "3.0"); empty = all
 	SortAscending bool
 	SortBy        string // "date_desc", "date_asc", "species_asc", "species_desc", "confidence_asc", "confidence_desc", "status"
 	Limit         int

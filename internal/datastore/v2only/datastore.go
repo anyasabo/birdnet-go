@@ -18,6 +18,7 @@ package v2only
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -60,7 +61,9 @@ const (
 	maxHour = 23
 	// saveTransactionTimeout is the maximum duration for a Save transaction.
 	// This prevents indefinite lock holding during slow I/O operations.
-	saveTransactionTimeout = 30 * time.Second
+	saveTransactionTimeout  = 30 * time.Second
+	sqliteDetectionDateExpr = "date(d.detected_at, 'unixepoch', 'localtime')"
+	mysqlDetectionDateExpr  = "DATE(FROM_UNIXTIME(d.detected_at))"
 )
 
 // parseHour validates and parses an hour string to an integer.
@@ -78,7 +81,7 @@ func parseHour(hour string) (int, error) {
 
 // parseID converts a string ID to uint.
 func parseID(id string) (uint, error) {
-	parsed, err := strconv.ParseUint(id, 10, 32)
+	parsed, err := strconv.ParseUint(id, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid ID %q: %w", id, err)
 	}
@@ -121,6 +124,7 @@ type Datastore struct {
 	imageCache   repository.ImageCacheRepository
 	threshold    repository.DynamicThresholdRepository
 	notification repository.NotificationHistoryRepository
+	appEvent     repository.AppEventRepository
 	log          logger.Logger
 	metrics      *datastore.Metrics
 	timezone     *time.Location
@@ -163,6 +167,7 @@ type Config struct {
 	ImageCache   repository.ImageCacheRepository
 	Threshold    repository.DynamicThresholdRepository
 	Notification repository.NotificationHistoryRepository
+	AppEvent     repository.AppEventRepository
 	Logger       logger.Logger
 	Timezone     *time.Location
 	SunCalc      *suncalc.SunCalc
@@ -276,6 +281,7 @@ func New(cfg *Config) (*Datastore, error) {
 		imageCache:         cfg.ImageCache,
 		threshold:          cfg.Threshold,
 		notification:       cfg.Notification,
+		appEvent:           cfg.AppEvent,
 		log:                cfg.Logger,
 		timezone:           tz,
 		suncalc:            cfg.SunCalc,
@@ -1406,6 +1412,7 @@ func (ds *Datastore) SearchNotesAdvanced(filters *datastore.AdvancedSearchFilter
 	deps := &repository.FilterLookupDeps{
 		LabelRepo:  ds.label,
 		SourceRepo: ds.source,
+		ModelRepo:  ds.model,
 	}
 
 	// Convert API-level filters to repository filters
@@ -2475,6 +2482,7 @@ type speciesFirstSeenInfo struct {
 	LabelID        uint
 	ScientificName string
 	FirstDetected  int64
+	LastDetected   int64
 }
 
 // convertToNewSpeciesData converts species first-seen data to NewSpeciesData with common name resolution.
@@ -2493,10 +2501,15 @@ func (ds *Datastore) convertToNewSpeciesData(_ context.Context, data []speciesFi
 		commonName := ds.resolveCommonName(sciName)
 
 		firstSeenDate := time.Unix(d.FirstDetected, 0).In(ds.timezone).Format(time.DateOnly)
+		var lastSeenDate string
+		if d.LastDetected > 0 {
+			lastSeenDate = time.Unix(d.LastDetected, 0).In(ds.timezone).Format(time.DateOnly)
+		}
 		result = append(result, datastore.NewSpeciesData{
 			ScientificName: sciName,
 			CommonName:     commonName,
 			FirstSeenDate:  firstSeenDate,
+			LastSeenDate:   lastSeenDate,
 			CountInPeriod:  0,
 		})
 	}
@@ -2522,6 +2535,7 @@ func (ds *Datastore) GetNewSpeciesDetections(ctx context.Context, startDate, end
 			LabelID:        d.LabelID,
 			ScientificName: d.ScientificName,
 			FirstDetected:  d.FirstDetected,
+			LastDetected:   d.LastDetected,
 		}
 	}
 
@@ -2553,6 +2567,103 @@ func (ds *Datastore) GetSpeciesFirstDetectionInPeriod(ctx context.Context, start
 	return ds.convertToNewSpeciesData(ctx, data), nil
 }
 
+// GetSpeciesDetectionDatesInPeriod returns distinct species/date pairs within a period.
+func (ds *Datastore) GetSpeciesDetectionDatesInPeriod(ctx context.Context, startDate, endDate string, limit, offset int) ([]datastore.SpeciesDetectionDate, error) {
+	start, end, err := ds.parseDateRange(startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 10000
+	}
+
+	dateExpr := sqliteDetectionDateExpr
+	if ds.manager.IsMySQL() {
+		dateExpr = mysqlDetectionDateExpr
+	}
+
+	type result struct {
+		ScientificName string `gorm:"column:scientific_name"`
+		Date           string `gorm:"column:date"`
+	}
+	var rows []result
+
+	prefix := ds.manager.TablePrefix()
+	query := ds.manager.DB().WithContext(ctx).
+		Table(prefix+"detections d").
+		Select(fmt.Sprintf("l.scientific_name as scientific_name, %s as date", dateExpr)).
+		Joins(fmt.Sprintf("JOIN %slabels l ON d.label_id = l.id", prefix)).
+		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
+		Where("d.detected_at >= ? AND d.detected_at < ?", start, end).
+		Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive)).
+		Group(fmt.Sprintf("l.scientific_name, %s", dateExpr)).
+		Order("date ASC, l.scientific_name ASC").
+		Limit(limit).
+		Offset(offset)
+
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_species_detection_dates_in_period").
+			Context("start_date", startDate).
+			Context("end_date", endDate).
+			Build()
+	}
+
+	results := make([]datastore.SpeciesDetectionDate, 0, len(rows))
+	for _, row := range rows {
+		scientificName := detection.ExtractScientificName(row.ScientificName)
+		results = append(results, datastore.SpeciesDetectionDate{
+			ScientificName: scientificName,
+			CommonName:     ds.resolveCommonName(scientificName),
+			Date:           row.Date,
+		})
+	}
+
+	return results, nil
+}
+
+// GetSpeciesLastDetectionDateBefore returns the last detection date before the given date.
+func (ds *Datastore) GetSpeciesLastDetectionDateBefore(ctx context.Context, scientificName, beforeDate string) (string, error) {
+	before, err := time.ParseInLocation(time.DateOnly, beforeDate, ds.timezone)
+	if err != nil {
+		return "", fmt.Errorf("invalid before date format: %w", err)
+	}
+
+	dateExpr := sqliteDetectionDateExpr
+	if ds.manager.IsMySQL() {
+		dateExpr = mysqlDetectionDateExpr
+	}
+
+	var result struct {
+		LastSeenDate string `gorm:"column:last_seen_date"`
+	}
+
+	escapedScientificName := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(scientificName)
+	prefix := ds.manager.TablePrefix()
+	query := ds.manager.DB().WithContext(ctx).
+		Table(prefix+"detections d").
+		Select(fmt.Sprintf("COALESCE(MAX(%s), '') as last_seen_date", dateExpr)).
+		Joins(fmt.Sprintf("JOIN %slabels l ON d.label_id = l.id", prefix)).
+		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
+		Where("d.detected_at < ?", before.Unix()).
+		Where("(l.scientific_name = ? OR l.scientific_name LIKE ? ESCAPE '\\')", scientificName, escapedScientificName+`\_%`).
+		Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive))
+
+	if err := query.Scan(&result).Error; err != nil {
+		return "", errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_species_last_detection_date_before").
+			Context("scientific_name", scientificName).
+			Context("before_date", beforeDate).
+			Build()
+	}
+
+	return result.LastSeenDate, nil
+}
+
 // GetSpeciesDiversityData returns unique species count per day.
 func (ds *Datastore) GetSpeciesDiversityData(ctx context.Context, startDate, endDate string) ([]datastore.DailyAnalyticsData, error) {
 	// Validate date formats before using in SQL
@@ -2572,11 +2683,9 @@ func (ds *Datastore) GetSpeciesDiversityData(ctx context.Context, startDate, end
 	// Generate database-agnostic date expression
 	// MySQL: DATE(FROM_UNIXTIME(d.detected_at))
 	// SQLite: date(d.detected_at, 'unixepoch', 'localtime') - localtime for timezone-aware bucketing
-	var dateExpr string
+	dateExpr := sqliteDetectionDateExpr
 	if ds.manager.IsMySQL() {
-		dateExpr = "DATE(FROM_UNIXTIME(d.detected_at))"
-	} else {
-		dateExpr = "date(d.detected_at, 'unixepoch', 'localtime')"
+		dateExpr = mysqlDetectionDateExpr
 	}
 
 	// Build query to count distinct species per day, excluding false positives
@@ -2638,18 +2747,22 @@ func thresholdModelName(t *entities.DynamicThreshold) string {
 // pre-built name maps. Falls back to the scientific name if no mapping exists.
 // Handles legacy concatenated "ScientificName_CommonName" format by extracting
 // only the scientific name portion before lookup.
-// Logs a warning (once per species) when the fallback is used and maps are populated,
-// to help diagnose issues where common names stop appearing.
+// Logs at info (once per species) when the fallback is used and maps are populated,
+// to help diagnose issues where common names stop appearing without surfacing
+// the benign fallback on the diagnostics health check.
 func (ds *Datastore) resolveCommonName(scientificName string) string {
 	sciName := detection.ExtractScientificName(scientificName)
 	nm := ds.loadNameMaps()
 	if cn, ok := nm.common[sciName]; ok {
 		return cn
 	}
-	// Log once per missing species when maps are populated (not during startup with empty maps)
+	// Log once per missing species when maps are populated (not during startup with empty maps).
+	// Logged at info because the fallback to the scientific name is the intended
+	// behavior; surfacing as a warning made it surface on the diagnostics health
+	// check as an "elevated error count" for benign missing translations.
 	if len(nm.common) > 0 {
 		if _, alreadyLogged := ds.loggedMissingNames.LoadOrStore(sciName, struct{}{}); !alreadyLogged {
-			ds.log.Warn("common name not found in name maps, falling back to scientific name",
+			ds.log.Info("common name not found in name maps, falling back to scientific name",
 				logger.String("scientific_name", sciName),
 				logger.Int("name_map_size", len(nm.common)))
 		}
@@ -3112,4 +3225,119 @@ func (ds *Datastore) DeleteExpiredNotificationHistory(before time.Time) (int64, 
 	}
 	ctx := context.Background()
 	return ds.notification.DeleteExpiredNotificationHistory(ctx, before)
+}
+
+// SaveAppEvent persists an application event with JSON-encoded metadata.
+func (ds *Datastore) SaveAppEvent(ctx context.Context, category, eventType, message string, metadata map[string]any) error {
+	if ds.appEvent == nil {
+		return nil
+	}
+	metadataJSON := "{}"
+	if len(metadata) > 0 {
+		data, err := json.Marshal(metadata)
+		if err != nil {
+			if ds.log != nil {
+				ds.log.Warn("failed to marshal app event metadata",
+					logger.String("category", category),
+					logger.String("event_type", eventType),
+					logger.Error(err))
+			}
+			metadataJSON = `{"error":"failed to encode metadata"}`
+		} else {
+			metadataJSON = string(data)
+		}
+	}
+	event := &entities.AppEvent{
+		Timestamp: time.Now(),
+		Category:  category,
+		EventType: eventType,
+		Message:   message,
+		Metadata:  metadataJSON,
+	}
+	return ds.appEvent.Save(ctx, event)
+}
+
+// GetRecentAppEvents returns recent application events with decoded metadata.
+func (ds *Datastore) GetRecentAppEvents(ctx context.Context, limit int) ([]datastore.AppEvent, error) {
+	if ds.appEvent == nil {
+		return nil, nil
+	}
+	v2Events, err := ds.appEvent.GetRecent(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return convertAppEvents(v2Events), nil
+}
+
+// GetAppEventsSince returns application events since the given time.
+func (ds *Datastore) GetAppEventsSince(ctx context.Context, since time.Time, limit int) ([]datastore.AppEvent, error) {
+	if ds.appEvent == nil {
+		return nil, nil
+	}
+	v2Events, err := ds.appEvent.GetSince(ctx, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	return convertAppEvents(v2Events), nil
+}
+
+// PruneAppEvents removes events older than retentionDays and enforces the 10k row cap.
+func (ds *Datastore) PruneAppEvents(ctx context.Context, retentionDays int) (int64, error) {
+	if ds.appEvent == nil {
+		return 0, nil
+	}
+	if retentionDays < 0 {
+		return 0, fmt.Errorf("retentionDays must be non-negative, got %d", retentionDays)
+	}
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	deleted, err := ds.appEvent.DeleteBefore(ctx, cutoff)
+	if err != nil {
+		return deleted, err
+	}
+
+	const maxRows = 10_000
+	count, err := ds.appEvent.Count(ctx)
+	if err != nil {
+		return deleted, err
+	}
+	if count > maxRows {
+		events, err := ds.appEvent.GetRecent(ctx, maxRows+1)
+		if err != nil {
+			return deleted, err
+		}
+		if len(events) > maxRows {
+			cutoffEvent := events[maxRows]
+			extraDeleted, err := ds.appEvent.DeleteBefore(ctx, cutoffEvent.Timestamp)
+			if err != nil {
+				return deleted, err
+			}
+			deleted += extraDeleted
+		}
+	}
+
+	return deleted, nil
+}
+
+// convertAppEvents converts v2 entity events to datastore.AppEvent with decoded metadata.
+func convertAppEvents(v2Events []entities.AppEvent) []datastore.AppEvent {
+	if len(v2Events) == 0 {
+		return nil
+	}
+	result := make([]datastore.AppEvent, 0, len(v2Events))
+	for _, e := range v2Events {
+		ae := datastore.AppEvent{
+			Timestamp: e.Timestamp,
+			Category:  e.Category,
+			EventType: e.EventType,
+			Message:   e.Message,
+		}
+		if e.Metadata != "" && e.Metadata != "{}" {
+			var meta map[string]any
+			if json.Unmarshal([]byte(e.Metadata), &meta) == nil {
+				ae.Metadata = meta
+			}
+		}
+		result = append(result, ae)
+	}
+	return result
 }

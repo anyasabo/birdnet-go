@@ -195,6 +195,8 @@ type DetectionResponse struct {
 	DaysThisYear    int    `json:"daysThisYear,omitempty"`    // Days since first this year
 	DaysThisSeason  int    `json:"daysThisSeason,omitempty"`  // Days since first this season
 	CurrentSeason   string `json:"currentSeason,omitempty"`   // Current season name
+
+	ModelVersion string `json:"modelVersion,omitempty"` // AI model version (only set for non-default models)
 }
 
 // SourceInfo describes the audio source of a detection.
@@ -256,12 +258,13 @@ type detectionQueryParams struct {
 	Offset     int
 	QueryType  string
 	// Advanced filter parameters
-	Confidence string
-	TimeOfDay  string
-	HourRange  string
-	Verified   string
-	Location   string
-	Locked     string
+	Confidence   string
+	TimeOfDay    string
+	HourRange    string
+	Verified     string
+	Location     string
+	Locked       string
+	ModelVersion string
 	// Sorting
 	SortBy string
 	// Include additional data
@@ -271,12 +274,12 @@ type detectionQueryParams struct {
 // advancedSearchCacheKey generates a deterministic cache key for advanced search queries.
 // Includes all filter parameters to avoid cache collisions.
 func (p *detectionQueryParams) advancedSearchCacheKey() string {
-	return fmt.Sprintf("adv_search:%s:%d:%d:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d",
+	return fmt.Sprintf("adv_search:%s:%d:%d:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%d",
 		p.Search, p.NumResults, p.Offset,
 		p.Confidence, p.TimeOfDay, p.HourRange,
 		p.Verified, p.Location, p.Locked,
 		p.Species, p.Date, p.StartDate+":"+p.EndDate,
-		p.SortBy, p.QueryType, p.Hour, p.Duration)
+		p.SortBy, p.QueryType, p.ModelVersion, p.Hour, p.Duration)
 }
 
 // parseDetectionQueryParams extracts and validates query parameters from the request
@@ -290,12 +293,13 @@ func (c *Controller) parseDetectionQueryParams(ctx echo.Context) (*detectionQuer
 		EndDate:   ctx.QueryParam("end_date"),
 		QueryType: ctx.QueryParam("queryType"),
 		// Advanced filter parameters
-		Confidence: ctx.QueryParam("confidence"),
-		TimeOfDay:  ctx.QueryParam("timeOfDay"),
-		HourRange:  ctx.QueryParam("hourRange"),
-		Verified:   ctx.QueryParam("verified"),
-		Location:   ctx.QueryParam("location"),
-		Locked:     ctx.QueryParam("locked"),
+		Confidence:   ctx.QueryParam("confidence"),
+		TimeOfDay:    ctx.QueryParam("timeOfDay"),
+		HourRange:    ctx.QueryParam("hourRange"),
+		Verified:     ctx.QueryParam("verified"),
+		Location:     ctx.QueryParam("location"),
+		Locked:       ctx.QueryParam("locked"),
+		ModelVersion: ctx.QueryParam("model_version"),
 		// Sorting
 		SortBy: ctx.QueryParam("sortBy"),
 		// Include weather data
@@ -610,6 +614,7 @@ func (p *detectionQueryParams) needsAdvancedRouting() bool {
 	if p.Confidence != "" || p.TimeOfDay != "" ||
 		p.HourRange != "" || p.Verified != "" ||
 		p.Location != "" || p.Locked != "" ||
+		p.ModelVersion != "" ||
 		p.StartDate != "" || p.EndDate != "" {
 		return true
 	}
@@ -724,6 +729,10 @@ func (c *Controller) noteToDetectionResponse(note *datastore.Note, includeWeathe
 	c.applySpeciesTrackingMetadata(&detection, note.ScientificName, note.Date)
 	detection.Verified = c.mapVerificationStatus(note.Verified)
 	detection.Comments = extractNoteComments(note.Comments)
+
+	if note.Model.Version != "" && note.Model.Version != detectionPkg.DefaultModelVersion {
+		detection.ModelVersion = note.Model.Version
+	}
 
 	if includeWeather {
 		c.populateWeatherData(&detection, note, weatherCache)
@@ -1101,6 +1110,9 @@ func (c *Controller) buildAdvancedSearchFilters(params *detectionQueryParams) da
 		locked := params.Locked == QueryValueTrue
 		filters.Locked = &locked
 	}
+
+	// Apply model version filter
+	filters.ModelVersion = params.ModelVersion
 
 	// Apply sorting
 	filters.SortBy = params.SortBy
@@ -1543,13 +1555,9 @@ func (c *Controller) IgnoreSpecies(ctx echo.Context) error {
 
 // GetExcludedSpecies returns the list of excluded species
 func (c *Controller) GetExcludedSpecies(ctx echo.Context) error {
-	settings := c.Settings
-
-	// Create a copy of the slice to avoid race conditions
-	c.speciesExcludeMutex.Lock()
-	species := make([]string, len(settings.Realtime.Species.Exclude))
-	copy(species, settings.Realtime.Species.Exclude)
-	c.speciesExcludeMutex.Unlock()
+	c.settingsMutex.RLock()
+	species := slices.Clone(c.getSettingsOrFallback().Realtime.Species.Exclude)
+	c.settingsMutex.RUnlock()
 
 	return ctx.JSON(http.StatusOK, ExcludedSpeciesResponse{
 		Species: species,
@@ -1573,40 +1581,42 @@ func (c *Controller) toggleSpeciesInIgnoredList(species string) (action string, 
 		return "", false, nil
 	}
 
-	// Use the controller's mutex to protect this operation
-	c.speciesExcludeMutex.Lock()
-	defer c.speciesExcludeMutex.Unlock()
+	// Serialise against concurrent settings saves so that out-of-band
+	// StoreSettings calls (range filter rebuild, etc.) cannot desynchronise
+	// c.Settings from the live atomic pointer between read and publish.
+	c.settingsMutex.Lock()
+	defer c.settingsMutex.Unlock()
 
-	// Access settings via dependency injection (not the global singleton)
-	settings := c.Settings
+	// Always read the live atomic snapshot; c.Settings may be stale after
+	// UpdateIncludedSpecies or other out-of-band StoreSettings calls.
+	current := c.getSettingsOrFallback()
 
-	// Check if species is already in the excluded list
-	wasExcluded := slices.Contains(settings.Realtime.Species.Exclude, species)
+	wasExcluded := slices.Contains(current.Realtime.Species.Exclude, species)
 
+	updated := conf.CloneSettings(current)
 	if wasExcluded {
-		// Remove from excluded list
-		newExcludeList := make([]string, 0, len(settings.Realtime.Species.Exclude)-1)
-		for _, s := range settings.Realtime.Species.Exclude {
-			if s != species {
-				newExcludeList = append(newExcludeList, s)
-			}
-		}
-		settings.Realtime.Species.Exclude = newExcludeList
+		updated.Realtime.Species.Exclude = slices.DeleteFunc(updated.Realtime.Species.Exclude, func(s string) bool {
+			return s == species
+		})
 		action = "removed"
 		isExcluded = false
 	} else {
-		// Add to excluded list
-		newExcludeList := make([]string, len(settings.Realtime.Species.Exclude), len(settings.Realtime.Species.Exclude)+1)
-		copy(newExcludeList, settings.Realtime.Species.Exclude)
-		newExcludeList = append(newExcludeList, species)
-		settings.Realtime.Species.Exclude = newExcludeList
+		updated.Realtime.Species.Exclude = append(updated.Realtime.Species.Exclude, species)
 		action = "added"
 		isExcluded = true
 	}
 
-	// Save settings using the package function that handles concurrency
-	if err := conf.SaveSettings(); err != nil {
-		return "", wasExcluded, fmt.Errorf("failed to save settings: %w", err)
+	if err := c.publishAndSaveSettings(current, updated); err != nil {
+		return "", wasExcluded, err
+	}
+
+	// Trigger side-effects (range filter rebuild, etc.) so the include list
+	// reflects the updated exclude list without waiting for the daily rebuild.
+	if handleErr := c.handleSettingsChanges(current, updated); handleErr != nil {
+		GetLogger().Warn("Failed to trigger settings side-effects after species exclusion change",
+			logger.Error(handleErr),
+			logger.String("species", species),
+			logger.String("action", action))
 	}
 
 	return action, isExcluded, nil
@@ -1619,32 +1629,25 @@ func (c *Controller) addSpeciesToIgnoredList(species string) error {
 		return nil
 	}
 
-	// Use the controller's mutex to protect this operation
-	c.speciesExcludeMutex.Lock()
-	defer c.speciesExcludeMutex.Unlock()
+	c.settingsMutex.Lock()
+	defer c.settingsMutex.Unlock()
 
-	// Access settings via dependency injection (not the global singleton)
-	settings := c.Settings
+	current := c.getSettingsOrFallback()
+	if slices.Contains(current.Realtime.Species.Exclude, species) {
+		return nil
+	}
 
-	// Check if species is already in the excluded list
-	isExcluded := slices.Contains(settings.Realtime.Species.Exclude, species)
+	updated := conf.CloneSettings(current)
+	updated.Realtime.Species.Exclude = append(updated.Realtime.Species.Exclude, species)
 
-	// If not already excluded, add it
-	if !isExcluded {
-		// Create a copy of the current exclude list to avoid race conditions
-		newExcludeList := make([]string, len(settings.Realtime.Species.Exclude), len(settings.Realtime.Species.Exclude)+1)
-		copy(newExcludeList, settings.Realtime.Species.Exclude)
+	if err := c.publishAndSaveSettings(current, updated); err != nil {
+		return err
+	}
 
-		// Add the new species to the list
-		newExcludeList = append(newExcludeList, species)
-
-		// Update the settings with the new list
-		settings.Realtime.Species.Exclude = newExcludeList
-
-		// Save settings using the package function that handles concurrency
-		if err := conf.SaveSettings(); err != nil {
-			return fmt.Errorf("failed to save settings: %w", err)
-		}
+	if handleErr := c.handleSettingsChanges(current, updated); handleErr != nil {
+		GetLogger().Warn("Failed to trigger settings side-effects after species exclusion change",
+			logger.Error(handleErr),
+			logger.String("species", species))
 	}
 
 	return nil
