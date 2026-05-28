@@ -730,7 +730,7 @@ func (c *Controller) noteToDetectionResponse(note *datastore.Note, includeWeathe
 	detection.Verified = c.mapVerificationStatus(note.Verified)
 	detection.Comments = extractNoteComments(note.Comments)
 
-	if note.Model.Version != "" && note.Model.Version != "2.4" {
+	if note.Model.Version != "" && note.Model.Version != detectionPkg.DefaultModelVersion {
 		detection.ModelVersion = note.Model.Version
 	}
 
