@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,11 +17,18 @@ import (
 // testModelID is used by tests to verify analysis buffer allocation.
 const testModelID = "BirdNET_V2.4"
 
+// BirdNET v2.4 analysis buffer dimensions: 3s of 16-bit 48kHz mono audio.
+const (
+	testClipBytes    = 288000 // 48000 * 3 * 1 * 2
+	testOverlapBytes = 144000
+	testReadSize     = 144000
+)
+
 func newTestEngine(t *testing.T) (eng *AudioEngine, stop func()) {
 	t.Helper()
 	cfg := &Config{Logger: audiocore.GetLogger()}
 	eng = New(t.Context(), cfg, nil)
-	eng.SetPrimaryModelID(testModelID)
+	eng.SetPrimaryModel(testModelID, testClipBytes, testOverlapBytes, testReadSize)
 	return eng, eng.Stop
 }
 
@@ -96,6 +104,90 @@ func TestEngine_AddSource_Stream(t *testing.T) {
 	// Verify FFmpeg stream was started (it appears in AllStreamHealth).
 	health := eng.FFmpegManager().AllStreamHealth()
 	assert.Contains(t, health, "test_rtsp_001", "stream should appear in FFmpeg manager")
+}
+
+// TestEngine_AddSource_HighSampleRate verifies that a source with a sample rate
+// above 48kHz gets analysis buffers sized to the primary model's native
+// dimensions, not scaled by the source/model rate ratio. This is the core
+// regression test for issue #575: BufferConsumer resamples audio to the model's
+// target rate before writing, so the analysis buffer must match the model spec.
+func TestEngine_AddSource_HighSampleRate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		sampleRate int
+	}{
+		{name: "96kHz source", sampleRate: 96000},
+		{name: "256kHz source (bat detection)", sampleRate: 256000},
+		{name: "48kHz source (baseline)", sampleRate: 48000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			eng, stop := newTestEngine(t)
+			defer stop()
+
+			sourceID := fmt.Sprintf("test_highrate_%d", tt.sampleRate)
+			cfg := &audiocore.SourceConfig{
+				ID:               sourceID,
+				DisplayName:      "High Rate Test",
+				Type:             audiocore.SourceTypeRTSP,
+				ConnectionString: "rtsp://192.168.1.100/highrate",
+				SampleRate:       tt.sampleRate,
+				BitDepth:         16,
+				Channels:         1,
+			}
+
+			err := eng.AddSource(cfg)
+			require.NoError(t, err)
+
+			ab, err := eng.BufferManager().AnalysisBuffer(sourceID, testModelID)
+			require.NoError(t, err)
+			require.NotNil(t, ab, "analysis buffer should be allocated")
+
+			// Verify the actual buffer dimensions match the model spec, not
+			// a scaled value. On the old buggy code with rateScale, a 96kHz
+			// source would produce windowSize=576000 instead of 288000.
+			assert.Equal(t, testClipBytes, ab.WindowSize(),
+				"analysis buffer window should match model spec (overlap+readSize=%d), not be scaled by source rate", testClipBytes)
+		})
+	}
+}
+
+// TestEngine_ReconfigureSource_HighSampleRate verifies that reconfiguring a
+// source to a higher sample rate does not scale the analysis buffer.
+func TestEngine_ReconfigureSource_HighSampleRate(t *testing.T) {
+	t.Parallel()
+	eng, stop := newTestEngine(t)
+	defer stop()
+
+	cfg := &audiocore.SourceConfig{
+		ID:               "test_reconfig_highrate",
+		DisplayName:      "Reconfigure Rate Test",
+		Type:             audiocore.SourceTypeRTSP,
+		ConnectionString: "rtsp://192.168.1.50/rate",
+		SampleRate:       48000,
+		BitDepth:         16,
+		Channels:         1,
+	}
+	require.NoError(t, eng.AddSource(cfg))
+
+	// Reconfigure to 96kHz.
+	newCfg := &audiocore.SourceConfig{
+		ConnectionString: "rtsp://192.168.1.50/rate_v2",
+		SampleRate:       96000,
+		BitDepth:         16,
+		Channels:         1,
+	}
+	require.NoError(t, eng.ReconfigureSource("test_reconfig_highrate", newCfg))
+
+	ab, err := eng.BufferManager().AnalysisBuffer("test_reconfig_highrate", testModelID)
+	require.NoError(t, err)
+	require.NotNil(t, ab, "analysis buffer should be allocated after reconfigure to 96kHz")
+	assert.Equal(t, testClipBytes, ab.WindowSize(),
+		"analysis buffer window should match model spec after reconfigure to 96kHz")
 }
 
 // TestEngine_AddSource_Device adds an audio card source and verifies
@@ -290,4 +382,151 @@ func TestErrEngineStopped_IsSentinel(t *testing.T) {
 
 	assert.True(t, errors.Is(ErrEngineStopped, ErrEngineStopped))
 	assert.Contains(t, ErrEngineStopped.Error(), "stop requested")
+}
+
+// TestEngine_AddSource_ZeroAudioParams verifies that zero-value SampleRate,
+// BitDepth, and Channels are defaulted before being stored in the registry
+// and passed to stream/device configs.
+func TestEngine_AddSource_ZeroAudioParams(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		sampleRate       int
+		bitDepth         int
+		channels         int
+		expectSampleRate int
+		expectBitDepth   int
+		expectChannels   int
+	}{
+		{
+			name:             "all zero defaults",
+			sampleRate:       0,
+			bitDepth:         0,
+			channels:         0,
+			expectSampleRate: defaultSampleRate,
+			expectBitDepth:   defaultBitDepth,
+			expectChannels:   defaultChannels,
+		},
+		{
+			name:             "negative values default",
+			sampleRate:       -1,
+			bitDepth:         -1,
+			channels:         -1,
+			expectSampleRate: defaultSampleRate,
+			expectBitDepth:   defaultBitDepth,
+			expectChannels:   defaultChannels,
+		},
+		{
+			name:             "explicit values preserved",
+			sampleRate:       96000,
+			bitDepth:         24,
+			channels:         2,
+			expectSampleRate: 96000,
+			expectBitDepth:   24,
+			expectChannels:   2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			eng, stop := newTestEngine(t)
+			defer stop()
+
+			sourceID := fmt.Sprintf("test_zero_%s", tt.name)
+			cfg := &audiocore.SourceConfig{
+				ID:               sourceID,
+				DisplayName:      "Zero Params Test",
+				Type:             audiocore.SourceTypeRTSP,
+				ConnectionString: "rtsp://192.168.1.100/zero",
+				SampleRate:       tt.sampleRate,
+				BitDepth:         tt.bitDepth,
+				Channels:         tt.channels,
+			}
+
+			err := eng.AddSource(cfg)
+			require.NoError(t, err)
+
+			src, ok := eng.Registry().Get(sourceID)
+			require.True(t, ok, "source should be registered")
+			assert.Equal(t, tt.expectSampleRate, src.SampleRate,
+				"registry SampleRate should be defaulted")
+			assert.Equal(t, tt.expectBitDepth, src.BitDepth,
+				"registry BitDepth should be defaulted")
+			assert.Equal(t, tt.expectChannels, src.Channels,
+				"registry Channels should be defaulted")
+		})
+	}
+}
+
+// TestEngine_ReconfigureSource_ZeroAudioParams verifies that zero-value
+// audio parameters are defaulted during reconfiguration and the registry
+// is updated with the effective values.
+func TestEngine_ReconfigureSource_ZeroAudioParams(t *testing.T) {
+	t.Parallel()
+	eng, stop := newTestEngine(t)
+	defer stop()
+
+	cfg := &audiocore.SourceConfig{
+		ID:               "test_reconfig_zero",
+		DisplayName:      "Reconfigure Zero Test",
+		Type:             audiocore.SourceTypeRTSP,
+		ConnectionString: "rtsp://192.168.1.100/zero",
+		SampleRate:       48000,
+		BitDepth:         16,
+		Channels:         1,
+	}
+	require.NoError(t, eng.AddSource(cfg))
+
+	newCfg := &audiocore.SourceConfig{
+		ConnectionString: "rtsp://192.168.1.100/zero_v2",
+		SampleRate:       0,
+		BitDepth:         0,
+		Channels:         0,
+	}
+	require.NoError(t, eng.ReconfigureSource("test_reconfig_zero", newCfg))
+
+	src, ok := eng.Registry().Get("test_reconfig_zero")
+	require.True(t, ok)
+	assert.Equal(t, defaultSampleRate, src.SampleRate,
+		"registry SampleRate should be defaulted after reconfigure")
+	assert.Equal(t, defaultBitDepth, src.BitDepth,
+		"registry BitDepth should be defaulted after reconfigure")
+	assert.Equal(t, defaultChannels, src.Channels,
+		"registry Channels should be defaulted after reconfigure")
+}
+
+// TestEngine_StartStream_ZeroBitDepthFallback verifies that StartStream
+// applies the defaultBitDepth fallback when the registry has zero BitDepth.
+// In practice this can't happen because AddSource always defaults, but
+// StartStream must be independently safe.
+func TestEngine_StartStream_ZeroBitDepthFallback(t *testing.T) {
+	t.Parallel()
+	eng, stop := newTestEngine(t)
+	defer stop()
+
+	cfg := &audiocore.SourceConfig{
+		ID:               "test_startstream_bitdepth",
+		DisplayName:      "StartStream BitDepth Test",
+		Type:             audiocore.SourceTypeRTSP,
+		ConnectionString: "rtsp://192.168.1.100/stream",
+		SampleRate:       48000,
+		BitDepth:         16,
+		Channels:         1,
+	}
+	require.NoError(t, eng.AddSource(cfg))
+
+	// Stop the stream started by AddSource so we can restart it.
+	require.NoError(t, eng.FFmpegManager().StopStream("test_startstream_bitdepth"))
+
+	// Manually zero out BitDepth in the registry to simulate an edge case.
+	eng.Registry().UpdateAudioParams("test_startstream_bitdepth", 48000, 0, 1)
+
+	// StartStream should not fail even with zero BitDepth in registry.
+	err := eng.StartStream("test_startstream_bitdepth", "rtsp://192.168.1.100/stream2", "")
+	require.NoError(t, err)
+
+	health := eng.FFmpegManager().AllStreamHealth()
+	assert.Contains(t, health, "test_startstream_bitdepth")
 }

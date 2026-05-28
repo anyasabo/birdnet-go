@@ -68,6 +68,13 @@ func (r *detectionRepository) predictionsTable() string {
 	return tableDetectionPredictions
 }
 
+func (r *detectionRepository) modelContributionsTable() string {
+	if r.useV2Prefix {
+		return tableV2DetectionModelContributions
+	}
+	return tableDetectionModelContributions
+}
+
 func (r *detectionRepository) reviewsTable() string {
 	if r.useV2Prefix {
 		return tableV2DetectionReviews
@@ -319,13 +326,24 @@ func (r *detectionRepository) SaveBatch(ctx context.Context, dets []*entities.De
 	}, r.metrics)
 }
 
-// DeleteBatch removes multiple detections by ID.
+// DeleteBatch removes multiple detections by ID, skipping locked entries.
+// Chunks the ID list to stay within SQL parameter limits.
 func (r *detectionRepository) DeleteBatch(ctx context.Context, ids []uint) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	return datastore.RetryOnLock(ctx, "v2_delete_detection_batch", func() error {
-		return r.db.WithContext(ctx).Table(r.tableName()).Delete(&entities.Detection{}, ids).Error
+		for i := 0; i < len(ids); i += batchQuerySize {
+			end := min(i+batchQuerySize, len(ids))
+			if err := r.db.WithContext(ctx).Table(r.tableName()).
+				Where("id IN ?", ids[i:end]).
+				Where(fmt.Sprintf("NOT EXISTS (SELECT 1 FROM %s WHERE %s.detection_id = %s.id)",
+					r.locksTable(), r.locksTable(), r.tableName())).
+				Delete(&entities.Detection{}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
 	}, r.metrics)
 }
 
@@ -585,9 +603,13 @@ func (r *detectionRepository) buildSearchFilters(query *gorm.DB, filters *Search
 	}
 	if len(filters.IncludedHours) > 0 {
 		// Extract local hour from Unix timestamp using timezone offset.
-		// Formula: FLOOR((detected_at + offset) / 3600) % 24
-		// FLOOR() ensures integer results on both SQLite and MySQL.
-		hourExpr := fmt.Sprintf("FLOOR((detected_at + %d) / 3600) %% 24", filters.TimezoneOffset)
+		detTable := r.tableName()
+		var hourExpr string
+		if r.isMySQL {
+			hourExpr = fmt.Sprintf("FLOOR((%s.detected_at + %d) / 3600) %% 24", detTable, filters.TimezoneOffset)
+		} else {
+			hourExpr = fmt.Sprintf("CAST((%s.detected_at + %d) / 3600 AS INTEGER) %% 24", detTable, filters.TimezoneOffset)
+		}
 		query = query.Where(hourExpr+" IN ?", filters.IncludedHours)
 	}
 	if filters.MinConfidence != nil {
@@ -1016,6 +1038,32 @@ func (r *detectionRepository) SavePredictions(ctx context.Context, detectionID u
 	}, r.metrics)
 }
 
+// SaveModelContributions stores per-model contribution data for a detection.
+// Existing contributions are deleted and new ones inserted atomically in a single
+// transaction for idempotent reconciliation.
+func (r *detectionRepository) SaveModelContributions(ctx context.Context, detectionID uint, contribs []*entities.DetectionModelContribution) error {
+	if len(contribs) == 0 {
+		return nil
+	}
+
+	return datastore.RetryOnLock(ctx, "v2_save_model_contributions", func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Table(r.modelContributionsTable()).
+				Where("detection_id = ?", detectionID).
+				Delete(&entities.DetectionModelContribution{}).Error; err != nil {
+				return err
+			}
+
+			for _, c := range contribs {
+				c.ID = 0
+				c.DetectionID = detectionID
+			}
+
+			return tx.Table(r.modelContributionsTable()).Create(&contribs).Error
+		})
+	}, r.metrics)
+}
+
 // SavePredictionsBatch stores predictions for multiple detections efficiently.
 // Uses ON CONFLICT DO NOTHING for idempotent migration support.
 func (r *detectionRepository) SavePredictionsBatch(ctx context.Context, preds []*entities.DetectionPrediction) error {
@@ -1053,31 +1101,21 @@ func (r *detectionRepository) DeletePredictions(ctx context.Context, detectionID
 // ============================================================================
 
 // SaveReview creates or updates a review for a detection.
+// Uses GORM's clause.OnConflict for dialect-aware upsert (SQLite + MySQL).
+// Idempotent: re-saving updates the verified status and timestamp.
 func (r *detectionRepository) SaveReview(ctx context.Context, review *entities.DetectionReview) error {
-	// Check if review exists
-	var existing entities.DetectionReview
-	err := r.db.WithContext(ctx).Table(r.reviewsTable()).
-		Where("detection_id = ?", review.DetectionID).
-		First(&existing).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Create new review
-		return datastore.RetryOnLock(ctx, "v2_save_review", func() error {
-			return r.db.WithContext(ctx).Table(r.reviewsTable()).Create(review).Error
-		}, r.metrics)
-	}
-	if err != nil {
-		return err
-	}
-
-	// Update existing review
-	return datastore.RetryOnLock(ctx, "v2_save_review_update", func() error {
+	return datastore.RetryOnLock(ctx, "v2_save_review", func() error {
+		now := time.Now()
+		review.UpdatedAt = now
 		return r.db.WithContext(ctx).Table(r.reviewsTable()).
-			Where("detection_id = ?", review.DetectionID).
-			Updates(map[string]any{
-				"verified":   review.Verified,
-				"updated_at": time.Now(),
-			}).Error
+			Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "detection_id"}},
+				DoUpdates: clause.Assignments(map[string]any{
+					"verified":   string(review.Verified),
+					"updated_at": now,
+				}),
+			}).
+			Create(review).Error
 	}, r.metrics)
 }
 
@@ -1290,25 +1328,28 @@ func (r *detectionRepository) GetCommentsByDetectionIDs(ctx context.Context, det
 // ============================================================================
 
 // Lock prevents modification/deletion of a detection.
+// Uses an atomic INSERT...SELECT...WHERE NOT EXISTS to avoid TOCTOU races.
+// Idempotent: locking an already-locked detection succeeds silently.
+// Returns ErrDetectionNotFound only if the detection does not exist.
 func (r *detectionRepository) Lock(ctx context.Context, detectionID uint) error {
-	// Check if detection exists
-	exists, err := r.Exists(ctx, detectionID)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return ErrDetectionNotFound
-	}
-
-	// Check if already locked
-	locked, _ := r.IsLocked(ctx, detectionID)
-	if locked {
-		return nil // Already locked, idempotent
-	}
-
-	lock := entities.DetectionLock{DetectionID: detectionID}
 	return datastore.RetryOnLock(ctx, "v2_lock_detection", func() error {
-		return r.db.WithContext(ctx).Table(r.locksTable()).Create(&lock).Error
+		result := r.db.WithContext(ctx).Exec(
+			fmt.Sprintf("INSERT INTO %s (detection_id, locked_at) SELECT ?, CURRENT_TIMESTAMP FROM %s WHERE %s.id = ? AND NOT EXISTS (SELECT 1 FROM %s WHERE %s.detection_id = ?)",
+				r.locksTable(), r.tableName(), r.tableName(), r.locksTable(), r.locksTable()),
+			detectionID, detectionID, detectionID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			exists, err := r.Exists(ctx, detectionID)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return ErrDetectionNotFound
+			}
+		}
+		return nil
 	}, r.metrics)
 }
 
@@ -1514,10 +1555,14 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 			MIN(d.label_id) as label_id,
 			species_first.scientific_name,
 			species_first.lifetime_first as first_detected,
+			species_first.lifetime_last as last_detected,
 			MIN(d.id) as detection_id,
 			MAX(d.confidence) as confidence
 		FROM (
-			SELECT l2.scientific_name, MIN(d2.detected_at) as lifetime_first
+			SELECT
+				l2.scientific_name,
+				MIN(d2.detected_at) as lifetime_first,
+				MAX(d2.detected_at) as lifetime_last
 			FROM %s d2
 			JOIN %s l2 ON l2.id = d2.label_id
 			GROUP BY l2.scientific_name

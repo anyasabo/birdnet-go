@@ -10,10 +10,31 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/errors"
 )
+
+var (
+	ffprobePathMu         sync.RWMutex
+	configuredFFprobePath string
+)
+
+// SetFFprobePath sets the validated ffprobe path, derived from the configured
+// ffmpeg location during startup. Safe for concurrent use.
+func SetFFprobePath(path string) {
+	ffprobePathMu.Lock()
+	configuredFFprobePath = path
+	ffprobePathMu.Unlock()
+}
+
+// GetFFprobePath returns the currently configured ffprobe binary path.
+func GetFFprobePath() string {
+	ffprobePathMu.RLock()
+	defer ffprobePathMu.RUnlock()
+	return configuredFFprobePath
+}
 
 // Validation constants for audio file validation.
 const (
@@ -340,16 +361,27 @@ func getFfprobeBinaryName() string {
 	return "ffprobe"
 }
 
-// executeFFprobe runs ffprobe and returns its CSV output.
-func executeFFprobe(ctx context.Context, path string) (string, error) {
-	ffprobeBinary := getFfprobeBinaryName()
-
-	// Ensure ffprobe is available before attempting to run it.
-	if _, err := exec.LookPath(ffprobeBinary); err != nil {
+// resolveFFprobeBinary returns the ffprobe binary path, falling back to
+// PATH lookup if the configured path is empty.
+func resolveFFprobeBinary() (string, error) {
+	if path := GetFFprobePath(); path != "" {
+		return path, nil
+	}
+	found, err := exec.LookPath(getFfprobeBinaryName())
+	if err != nil {
 		return "", ErrFFprobeNotAvailable
 	}
+	return found, nil
+}
 
-	cmd := exec.CommandContext(ctx, ffprobeBinary, //nolint:gosec // G204: ffprobeBinary is a fixed platform constant, path validated by caller
+// executeFFprobe runs ffprobe and returns its CSV output.
+func executeFFprobe(ctx context.Context, path string) (string, error) {
+	ffprobeBinary, err := resolveFFprobeBinary()
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.CommandContext(ctx, ffprobeBinary, //nolint:gosec // G204: ffprobeBinary validated by config or exec.LookPath, path validated by caller
 		"-v", "error",
 		"-show_entries", "format=duration,bit_rate:stream=sample_rate,channels,codec_name",
 		"-of", "csv=p=0",

@@ -92,9 +92,10 @@ const (
 	// Session ID validation
 
 	// FFmpeg HLS muxer settings
-	hlsListSize    = 6 // Number of HLS segments to keep in playlist (must exceed HLS.js liveSyncDurationCount)
-	hlsAllowCache  = 1 // Allow client-side caching of HLS segments
-	hlsStartNumber = 0 // Starting sequence number for HLS segments
+	hlsListSize        = 6          // Number of HLS segments to keep in playlist (must exceed HLS.js liveSyncDurationCount)
+	hlsAllowCache      = 1          // Allow client-side caching of HLS segments
+	hlsStartNumber     = 0          // Starting sequence number for HLS segments
+	hlsInitSegmentName = "init.mp4" // fMP4 initialization segment filename
 )
 
 // HLSStreamInfo contains information about an active HLS streaming session
@@ -116,6 +117,7 @@ type HLSStreamInfo struct {
 	pdtOffset         atomic.Int64 // Correction (nanoseconds) to add to FFmpeg's PDT values
 	pdtOffsetComputed atomic.Bool  // True once pdtOffset has been successfully computed
 	firstDataTime     atomic.Int64 // Wall-clock time (UnixNano) when first audio data was written to FIFO
+	initSegmentCache  atomic.Value // []byte; survives FFmpeg delete_segments removing init.mp4 from disk
 }
 
 // HLSStreamStatus represents the current status of an HLS stream (API response)
@@ -229,9 +231,7 @@ func (c *Controller) initHLSRoutes() {
 // to take effect immediately without a server restart.
 func (c *Controller) publicLiveAudioAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
-		c.settingsMutex.RLock()
-		isPublic := c.Settings.Security.PublicAccess.LiveAudio
-		c.settingsMutex.RUnlock()
+		isPublic := c.currentSettings().Security.PublicAccess.LiveAudio
 		if isPublic {
 			return next(ctx)
 		}
@@ -324,7 +324,11 @@ func (c *Controller) StartHLSStream(ctx echo.Context) error {
 		logger.Bool("force_restart", forceRestart))
 
 	// Verify source exists by checking for a capture buffer
-	if _, bufErr := c.engine.BufferManager().CaptureBuffer(sourceID); bufErr != nil {
+	eng := c.engine.Load()
+	if eng == nil {
+		return c.HandleError(ctx, nil, "Audio engine not initialized", http.StatusServiceUnavailable)
+	}
+	if _, bufErr := eng.BufferManager().CaptureBuffer(sourceID); bufErr != nil {
 		return c.HandleError(ctx, nil, "Audio source not found", http.StatusNotFound)
 	}
 
@@ -841,7 +845,28 @@ func (c *Controller) ServeHLSContent(ctx echo.Context) error {
 		return c.HandleError(ctx, nil, "Invalid segment path", http.StatusBadRequest)
 	}
 
-	// Check if segment exists
+	// For init.mp4, serve from memory once cached to avoid TOCTOU races where
+	// FFmpeg's delete_segments removes the file between the existence check and serve.
+	isInitSegment := safeRequestPath == hlsInitSegmentName
+
+	if isInitSegment {
+		if cached, _ := stream.initSegmentCache.Load().([]byte); len(cached) > 0 {
+			c.setHLSHeaders(ctx)
+			c.setHLSContentType(ctx, safeRequestPath)
+			return ctx.Blob(http.StatusOK, ctx.Response().Header().Get(echo.HeaderContentType), cached)
+		}
+
+		data, err := secFS.ReadFile(segmentPath)
+		if err != nil {
+			return c.HandleError(ctx, nil, "Segment file not found", http.StatusNotFound)
+		}
+
+		stream.initSegmentCache.Store(data)
+		c.setHLSHeaders(ctx)
+		c.setHLSContentType(ctx, safeRequestPath)
+		return ctx.Blob(http.StatusOK, ctx.Response().Header().Get(echo.HeaderContentType), data)
+	}
+
 	if !secFS.ExistsNoErr(segmentPath) {
 		return c.HandleError(ctx, nil, "Segment file not found", http.StatusNotFound)
 	}
@@ -926,7 +951,7 @@ func (c *Controller) setHLSHeaders(ctx echo.Context) {
 
 // getEffectiveSegmentLength returns the configured segment length with defaults and limits applied
 func (c *Controller) getEffectiveSegmentLength() int {
-	segmentLength := c.Settings.WebServer.LiveStream.SegmentLength
+	segmentLength := c.currentSettings().WebServer.LiveStream.SegmentLength
 	switch {
 	case segmentLength < hlsMinSegmentLen:
 		return hlsDefaultSegmentLen // Default
@@ -941,7 +966,7 @@ func (c *Controller) getEffectiveSegmentLength() int {
 func (c *Controller) setHLSContentType(ctx echo.Context, path string) {
 	switch filepath.Ext(path) {
 	case ".ts":
-		ctx.Response().Header().Set("Content-Type", "audio/mp2t")
+		ctx.Response().Header().Set("Content-Type", "video/mp2t")
 		ctx.Response().Header().Set("Cache-Control", "public, max-age=60")
 	case ".m4s":
 		ctx.Response().Header().Set("Content-Type", "video/iso.segment")
@@ -1098,7 +1123,7 @@ func (c *Controller) createHLSStream(sourceID string) (*HLSStreamInfo, error) {
 	}
 
 	// Validate FFmpeg path (defense-in-depth against ingress path contamination, see #2195)
-	ffmpegPath := c.Settings.Realtime.Audio.FfmpegPath
+	ffmpegPath := c.currentSettings().Realtime.Audio.FfmpegPath
 	if err := ffmpeg.ValidateFFmpegPath(ffmpegPath); err != nil {
 		streamCancel()
 		return nil, fmt.Errorf("invalid FFmpeg path: %w", err)
@@ -1114,10 +1139,12 @@ func (c *Controller) createHLSStream(sourceID string) (*HLSStreamInfo, error) {
 		return nil, err
 	}
 
-	// Determine reader path based on platform
+	// Determine reader path based on platform.
+	// On Windows, setupWindowsAudioFeed writes audio data to FFmpeg's stdin,
+	// so FFmpeg must read from "pipe:0" (stdin) rather than the named pipe.
 	readerPath := fifoPath
 	if runtime.GOOS == OSWindows {
-		readerPath = pipeName
+		readerPath = "pipe:0"
 	}
 
 	// Setup and start FFmpeg
@@ -1294,7 +1321,7 @@ func (c *Controller) setupHLSFFmpeg(ctx context.Context, ffmpegPath, inputSource
 
 // buildFFmpegArgs constructs FFmpeg command line arguments
 func (c *Controller) buildFFmpegArgs(inputSource, outputDir, playlistPath string) []string {
-	settings := c.Settings.WebServer.LiveStream
+	settings := c.currentSettings().WebServer.LiveStream
 
 	// Apply defaults and limits
 	bitrate := 128
@@ -1342,18 +1369,44 @@ func (c *Controller) buildFFmpegArgs(inputSource, outputDir, playlistPath string
 		"-f", "hls",
 		"-hls_time", fmt.Sprintf("%d", segmentLength),
 		"-hls_list_size", strconv.Itoa(hlsListSize),
-		"-hls_flags", "delete_segments+temp_file+program_date_time+independent_segments",
-		"-hls_segment_type", "fmp4",
-		"-hls_fmp4_init_filename", "init.mp4",
+	}
+
+	// On Windows, FFmpeg reads from stdin (pipe:0) which is non-seekable.
+	// The fMP4 segment type requires FFmpeg to write a separate init.mp4 file,
+	// but FFmpeg fails to create it when reading from a non-seekable source.
+	// Use MPEG-TS segments on Windows which are self-contained and don't need
+	// a separate initialization segment.
+	if runtime.GOOS == OSWindows {
+		args = append(args,
+			"-hls_flags", "delete_segments+program_date_time+independent_segments",
+			"-hls_segment_type", "mpegts",
+		)
+	} else {
+		args = append(args,
+			"-hls_flags", "delete_segments+temp_file+program_date_time+independent_segments",
+			"-hls_segment_type", "fmp4",
+			"-hls_fmp4_init_filename", hlsInitSegmentName,
+			"-movflags", "empty_moov+separate_moof+default_base_moof",
+		)
+	}
+
+	args = append(args,
 		"-hls_init_time", fmt.Sprintf("%d", segmentLength),
 		"-hls_allow_cache", strconv.Itoa(hlsAllowCache),
-		"-movflags", "empty_moov+separate_moof+default_base_moof",
 		"-flush_packets", "1",
 		"-start_number", strconv.Itoa(hlsStartNumber),
 		"-loglevel", logLevel,
-		"-hls_segment_filename", filepath.ToSlash(filepath.Join(outputDir, "segment%03d.m4s")),
-		playlistPath,
+	)
+
+	// Segment filename extension matches the segment type
+	segExt := "m4s"
+	if runtime.GOOS == OSWindows {
+		segExt = "ts"
 	}
+	args = append(args,
+		"-hls_segment_filename", filepath.ToSlash(filepath.Join(outputDir, "segment%03d."+segExt)),
+		playlistPath,
+	)
 
 	return args
 }
@@ -1528,8 +1581,9 @@ func (c *Controller) setupAudioCallback(sourceID string) (audioChan chan []byte,
 	consumerID := fmt.Sprintf("hls_%s_%s", privacy.SanitizeStreamUrl(sourceID), uuid.New().String()[:8])
 	// Use the configured live stream sample rate, falling back to the default HLS sample rate.
 	sampleRate := hlsDefaultSampleRate
-	if c.Settings.WebServer.LiveStream.SampleRate > 0 {
-		sampleRate = c.Settings.WebServer.LiveStream.SampleRate
+	liveStream := c.currentSettings().WebServer.LiveStream
+	if liveStream.SampleRate > 0 {
+		sampleRate = liveStream.SampleRate
 	}
 
 	consumer := &hlsConsumer{
@@ -1541,14 +1595,20 @@ func (c *Controller) setupAudioCallback(sourceID string) (audioChan chan []byte,
 		channels: 1,
 	}
 
+	// Load the engine once for all registry/router operations in this section.
+	eng := c.engine.Load()
+	if eng == nil {
+		return nil, nil, fmt.Errorf("audio engine not initialized")
+	}
+
 	// Look up per-source gain from the registry so HLS listeners
 	// hear the same gain-adjusted audio as the analysis pipeline.
-	gainDB, _ := c.engine.Registry().GetGain(sourceID)
+	gainDB, _ := eng.Registry().GetGain(sourceID)
 
 	// Resolve EQ filter chain for this source so HLS listeners
 	// hear the same filtered audio as the analysis pipeline.
 	settings := conf.Setting()
-	src, _ := c.engine.Registry().Get(sourceID)
+	src, _ := eng.Registry().Get(sourceID)
 	sourceName := sourceID
 	if src != nil {
 		sourceName = src.DisplayName
@@ -1557,14 +1617,14 @@ func (c *Controller) setupAudioCallback(sourceID string) (audioChan chan []byte,
 	eqChain := equalizer.BuildFilterChainWithOverride(override, settings.Realtime.Audio.Equalizer, sourceName, sampleRate)
 
 	// Add route on the AudioRouter
-	if routeErr := c.engine.Router().AddRoute(sourceID, consumer, sampleRate, gainDB, eqChain); routeErr != nil {
+	if routeErr := eng.Router().AddRoute(sourceID, consumer, sampleRate, gainDB, eqChain); routeErr != nil {
 		return nil, nil, fmt.Errorf("failed to add HLS route: %w", routeErr)
 	}
 
 	GetLogger().Debug("Registered HLS audio route", logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)), logger.String("consumer_id", consumerID))
 
 	cleanup = func() {
-		c.engine.Router().RemoveRoute(sourceID, consumerID)
+		eng.Router().RemoveRoute(sourceID, consumerID)
 		GetLogger().Debug("Removed HLS audio route", logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)), logger.String("consumer_id", consumerID))
 	}
 
@@ -1900,6 +1960,17 @@ func (c *Controller) cleanupExistingHLSStream(sourceID string) {
 				}
 			}
 		}
+	}
+}
+
+// RestartHLSStreams stops all active HLS streams so they restart with fresh settings.
+func (c *Controller) RestartHLSStreams() {
+	hlsMgr.streamsMu.Lock()
+	sourceIDs := slices.Collect(maps.Keys(hlsMgr.streams))
+	hlsMgr.streamsMu.Unlock()
+
+	for _, id := range sourceIDs {
+		c.stopHLSStream(id, "settings changed")
 	}
 }
 

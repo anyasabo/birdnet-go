@@ -16,12 +16,6 @@
     "search": "Suchen",
     "filter": "Filtern",
     "sort": "Sortieren",
-    "actions": {
-      "download": "Herunterladen",
-      "review": "Überprüfen",
-      "play": "Abspielen",
-      "view": "Ansehen"
-    },
     "settings": "Einstellungen",
     "close": "Schließen",
     "back": "Zurück",
@@ -38,6 +32,12 @@
     "loginToViewDetails": "Anmelden um Details anzuzeigen",
     "pageNotFound": "Seite nicht gefunden",
     "internalServerError": "Interner Serverfehler",
+    "actions": {
+      "download": "Herunterladen",
+      "review": "Überprüfen",
+      "play": "Abspielen",
+      "view": "Ansehen"
+    },
     "buttons": {
       "save": "Änderungen speichern",
       "reset": "Zurücksetzen",
@@ -154,7 +154,8 @@
         "verifiedCorrect": "Als korrekt verifiziert",
         "falsePositive": "Falsch positiv",
         "notReviewed": "Nicht überprüft",
-        "locked": "Gesperrt"
+        "locked": "Gesperrt",
+        "unlikely": "Unwahrscheinlich"
       },
       "form": {
         "correctDetection": "Korrekte Erkennung",
@@ -227,7 +228,16 @@
     "analyticsSubmenu": "Analysen-Untermenü",
     "settingsSubmenu": "Einstellungen-Untermenü",
     "systemSubmenu": "System-Untermenü",
-    "systemTerminal": "Terminal"
+    "systemTerminal": "Terminal",
+    "help": "Hilfe",
+    "helpSubmenu": "Hilfe-Untermenü",
+    "helpAndSupport": "Hilfe & Support",
+    "reportBug": "Fehler melden",
+    "askQuestion": "Frage stellen",
+    "reportBugAriaLabel": "Einen Fehler auf GitHub melden (öffnet in neuem Fenster)",
+    "askQuestionAriaLabel": "Eine Frage in GitHub Discussions stellen (öffnet in neuem Fenster)",
+    "viewOnGithubAriaLabel": "BirdNET-Go auf GitHub ansehen (öffnet in neuem Fenster)",
+    "health": "Health"
   },
   "about": {
     "title": "BirdNET-Go",
@@ -423,7 +433,11 @@
       },
       "buffer": {
         "overloadTitle": "Audioanalyse überlastet",
-        "overloadMessage": "Ihr System verwirft {dropRate} % der Audioaufnahmen der Quelle '{sourceName}', da es mit der Analyse nicht Schritt halten kann. Reduzieren Sie den BirdNET-Überlappungswert in den Erkennungseinstellungen oder erwägen Sie ein Upgrade auf eine schnellere CPU."
+        "overloadMessage": "Ihr System verwirft {dropRate} % der Audioaufnahmen der Quelle ''{sourceName}'', da es mit der Analyse nicht Schritt halten kann. Reduzieren Sie den BirdNET-Überlappungswert in den Erkennungseinstellungen oder erwägen Sie ein Upgrade auf eine schnellere CPU."
+      },
+      "ort": {
+        "unavailableTitle": "ONNX Runtime nicht verfügbar",
+        "unavailableMessage": "ONNX Runtime {requiredVersion} wird für {modelName} benötigt, wurde aber nicht gefunden. Siehe Installationsanleitung: {installGuideURL}"
       },
       "alert": {
         "firedTitle": "{rule_name}",
@@ -513,7 +527,8 @@
       "false": "Falsch",
       "unverified": "Unverifiziert",
       "locked": "Gesperrt",
-      "unlocked": "Entsperrt"
+      "unlocked": "Entsperrt",
+      "unlikely": "Unwahrscheinlich"
     },
     "review": {
       "review": "Überprüfen",
@@ -641,7 +656,8 @@
         "verified": "Verifiziert",
         "false": "Falsch",
         "unverified": "Unverifiziert",
-        "locked": "Gesperrt"
+        "locked": "Gesperrt",
+        "unlikely": "Unwahrscheinlich"
       },
       "modals": {
         "showSpecies": "Art {species} anzeigen",
@@ -772,6 +788,11 @@
       "recording": "Aufnahme",
       "actions": "Aktionen"
     },
+    "viewToggle": {
+      "label": "Ansichtsmodus",
+      "table": "Tabellenansicht",
+      "cards": "Kartenansicht"
+    },
     "status": {
       "locked": "Gesperrt"
     },
@@ -792,6 +813,25 @@
     },
     "pagination": {
       "showing": "Zeige {from} bis {to} von {total} Ergebnissen"
+    },
+    "selection": {
+      "select": "Auswählen",
+      "nSelected": "{count} ausgewählt",
+      "selectAllMatching": "Alle {count} passenden Erkennungen auswählen",
+      "allSelected": "Alle {count} ausgewählt",
+      "clear": "Auswahl aufheben",
+      "toolbarLabel": "Massenaktionen",
+      "confirmBulkDelete": "{count} Erkennungen löschen? Dies kann nicht rückgängig gemacht werden.",
+      "confirmBulkMarkCorrect": "{count} Erkennungen als korrekt markieren?",
+      "confirmBulkMarkFalsePositive": "{count} Erkennungen als Fehlalarm markieren?",
+      "confirmBulkLock": "{count} Erkennungen sperren?",
+      "confirmBulkUnlock": "{count} Erkennungen entsperren?",
+      "bulkSuccess": "{count} Erkennungen aktualisiert",
+      "bulkDeleteSuccess": "{count} Erkennungen gelöscht",
+      "bulkPartial": "{processed} aktualisiert, {skipped} übersprungen (gesperrt)",
+      "tooManyDetections": "Zu viele Erkennungen ({count}). Schränken Sie die Filter ein, um weniger als 500 auszuwählen.",
+      "bulkError": "Massenaktion fehlgeschlagen. Bitte erneut versuchen.",
+      "switchToTable": "Zur Tabellenansicht wechseln, um Erkennungen auszuwählen"
     },
     "weather": {
       "title": "Wetterinformationen",
@@ -815,22 +855,55 @@
         "pressure": "hPa"
       },
       "conditions": {
-        "clearsky_day": "Klarer Himmel",
-        "clearsky_night": "Klarer Himmel",
-        "fair_day": "Heiter",
-        "fair_night": "Heiter",
-        "partlycloudy_day": "Teilweise bewölkt",
-        "partlycloudy_night": "Teilweise bewölkt",
+        "clearsky": "Klarer Himmel",
         "cloudy": "Bewölkt",
-        "rainshowers_day": "Regenschauer",
-        "rainshowers_night": "Regenschauer",
-        "rain": "Regen",
-        "thunder": "Gewitter",
-        "sleet": "Schneeregen",
-        "snow": "Schnee",
+        "fair": "Heiter",
         "fog": "Nebel",
+        "heavyrain": "Starker Regen",
+        "heavyrainandthunder": "Starker Regen und Gewitter",
+        "heavyrainshowers": "Starke Regenschauer",
+        "heavyrainshowersandthunder": "Starke Regenschauer und Gewitter",
+        "heavysleet": "Starker Schneeregen",
+        "heavysleetandthunder": "Starker Schneeregen und Gewitter",
+        "heavysleetshowers": "Starke Schneeregenschauer",
+        "heavysleetshowersandthunder": "Starke Schneeregenschauer und Gewitter",
+        "heavysnow": "Starker Schnee",
+        "heavysnowandthunder": "Starker Schnee und Gewitter",
+        "heavysnowshowers": "Starke Schneeschauer",
+        "heavysnowshowersandthunder": "Starke Schneeschauer und Gewitter",
+        "lightrain": "Leichter Regen",
+        "lightrainandthunder": "Leichter Regen und Gewitter",
+        "lightrainshowers": "Leichte Regenschauer",
+        "lightrainshowersandthunder": "Leichte Regenschauer und Gewitter",
+        "lightsleet": "Leichter Schneeregen",
+        "lightsleetandthunder": "Leichter Schneeregen und Gewitter",
+        "lightsleetshowers": "Leichte Schneeregenschauer",
+        "lightsnow": "Leichter Schnee",
+        "lightsnowandthunder": "Leichter Schnee und Gewitter",
+        "lightsnowshowers": "Leichte Schneeschauer",
+        "lightssleetshowersandthunder": "Leichte Schneeregenschauer und Gewitter",
+        "lightssnowshowersandthunder": "Leichte Schneeschauer und Gewitter",
+        "partlycloudy": "Teilweise bewölkt",
+        "rain": "Regen",
+        "rainandthunder": "Regen und Gewitter",
+        "rainshowers": "Regenschauer",
+        "rainshowersandthunder": "Regenschauer und Gewitter",
+        "sleet": "Schneeregen",
+        "sleetandthunder": "Schneeregen und Gewitter",
+        "sleetshowers": "Schneeregenschauer",
+        "sleetshowersandthunder": "Schneeregenschauer und Gewitter",
+        "snow": "Schnee",
+        "snowandthunder": "Schnee und Gewitter",
+        "snowshowers": "Schneeschauer",
+        "snowshowersandthunder": "Schneeschauer und Gewitter",
+        "thunder": "Gewitter",
         "unknown": "Unbekannt"
       }
+    },
+    "row": {
+      "viewDetails": "Details für {species} anzeigen",
+      "play": "Abspielen",
+      "playAudio": "Audio abspielen"
     },
     "media": {
       "title": "Aufnahme & Spektrogramm",
@@ -860,13 +933,13 @@
       "title": "Notizen & Kommentare",
       "noComments": "Keine Kommentare oder Notizen für diese Erkennung."
     },
-    "row": {
-      "viewDetails": "Details für {species} anzeigen"
-    },
     "aria": {
       "loading": "Erkennungsdetails werden geladen...",
       "loaded": "Erkennungsdetails für {species} geladen",
-      "error": "Fehler beim Laden der Erkennung: {error}"
+      "error": "Fehler beim Laden der Erkennung: {error}",
+      "loadingResults": "Lade {count} Ergebnisse...",
+      "thumbnailLoading": "Lade Vorschaubild von {species}...",
+      "thumbnailLoaded": "Vorschaubild von {species} geladen"
     },
     "errors": {
       "notFound": "Erkennung nicht gefunden. Sie wurde möglicherweise gelöscht oder die ID ist falsch.",
@@ -876,11 +949,6 @@
       "loadFailed": "Fehler beim Laden der Erkennung (Fehler {status}). Bitte aktualisieren Sie die Seite.",
       "noIdProvided": "Keine Erkennungs-ID angegeben.",
       "fetchFailed": "Erkennungen konnten nicht abgerufen werden"
-    },
-    "viewToggle": {
-      "label": "Ansichtsmodus",
-      "table": "Tabellenansicht",
-      "cards": "Kartenansicht"
     }
   },
   "species": {
@@ -1008,6 +1076,12 @@
         "buffCache": "Puffer/Cache"
       }
     },
+    "progress": {
+      "labels": {
+        "overallProgress": "Gesamtfortschritt",
+        "progress": "Fortschritt"
+      }
+    },
     "processInfo": {
       "title": "Prozessinformationen",
       "loading": "Prozessinformationen werden geladen...",
@@ -1039,12 +1113,6 @@
       "temperature": "Fehler beim Laden der Temperatur: {error}",
       "processes": "Fehler beim Laden der Prozessinformationen: {error}"
     },
-    "progress": {
-      "labels": {
-        "overallProgress": "Gesamtfortschritt",
-        "progress": "Fortschritt"
-      }
-    },
     "sections": {
       "overview": "Übersicht",
       "database": "Datenbank",
@@ -1053,211 +1121,13 @@
     "database": {
       "title": "Datenbankverwaltung",
       "description": "Schema-Migration verwalten",
-      "migration": {
-        "title": "Datenbankmigration",
-        "description": "Von Legacy-Schema zu normalisiertem v2-Schema migrieren",
-        "completedTitle": "Migration abgeschlossen",
-        "completedNote": "Ihre Datenbank wurde erfolgreich auf das neue Schema migriert. Bitte starten Sie BirdNET-Go neu, um zur neuen Datenbank zu wechseln. Hinweis: Die neue Datenbank ist kleiner, weil sie Daten effizienter speichert - das ist normal und alle Ihre Daten sind erhalten.",
-        "status": {
-          "idle": "Bereit zum Starten",
-          "initializing": "Initialisierung",
-          "dual_write": "Dual-Write aktiv",
-          "migrating": "Migriere Primärdaten",
-          "migrating_predictions": "Migriere Sekundärdaten",
-          "paused": "Pausiert",
-          "validating": "Validierung",
-          "cutover": "Umstellung läuft",
-          "completed": "Migration abgeschlossen",
-          "failed": "Validierung fehlgeschlagen"
-        },
-        "progress": {
-          "title": "Migrationsfortschritt",
-          "records": "Datensätze",
-          "percent": "{percent}%",
-          "rate": "{rate} Datensätze/Sek",
-          "rateValue": "{rate} Dat/s",
-          "remaining": "Verbleibend: {time}",
-          "eta": "Geschätzte Restzeit",
-          "dirtyIds": "{count} Datensätze ausstehend",
-          "paused": "Migration pausiert",
-          "completedTitle": "Migration abgeschlossen",
-          "completedBody": "Alle {count} Datensätze wurden erfolgreich in die V2-Datenbank migriert. Die Anwendung verwendet V2 nach dem Neustart als primäre Datenbank.",
-          "restartTitle": "Neustart erforderlich",
-          "restartBody": "Starten Sie die Anwendung neu, um zur V2-Datenbank zu wechseln. Die Bereinigung der Legacy-Datenbank ist nach dem Neustart verfügbar.",
-          "fallbackError": "Abweichung der Datensatzanzahl zwischen Legacy- und V2-Datenbank. Einige Datensätze wurden möglicherweise nicht korrekt migriert.",
-          "migrateInfo": "Die Migration überträgt {count} Datensätze von der Legacy-Datenbank in das neue V2-Schema. Der Dual-Write-Modus stellt sicher, dass während der Migration keine Daten verloren gehen.",
-          "sourceLegacy": "Quelle (Legacy)",
-          "targetV2": "Ziel (V2)",
-          "recordsLabel": "Datensätze",
-          "sizeLabel": "Größe",
-          "prerequisitesNotMet": "Voraussetzungen nicht erfüllt – beheben Sie die kritischen Probleme unten",
-          "validatingTitle": "Daten werden überprüft",
-          "validatingBody": "{count} Legacy-Datensätze werden mit der V2-Datenbank verglichen...",
-          "dirtyRecordsCatchup": "{count} schmutzige Datensätze — Nachholabgleich wird versucht",
-          "cutoverTitle": "Umstellung wird abgeschlossen",
-          "cutoverBody": "Übergang zur V2-Datenbank wird abgeschlossen...",
-          "migratingPhase": "Migriere {phase}",
-          "progressLabel": "Fortschritt",
-          "ofRecords": "/ {count} Datensätze",
-          "percentComplete": "{percent}% abgeschlossen",
-          "recordsPerSec": "{rate} Datensätze/Sek.",
-          "calculating": "Berechne...",
-          "dirtyWriteFailed": "{count} Datensätze konnten nicht geschrieben werden — werden bei der Validierung abgeglichen"
-        },
-        "phase": {
-          "indicator": "Phase {current} von {total}: ",
-          "detections": "Migriere Primärerkennungen",
-          "predictions": "Migriere Sekundärerkennungen",
-          "reviews": "Migriere Überprüfungen",
-          "comments": "Migriere Kommentare",
-          "locks": "Migriere Sperren"
-        },
-        "notes": {
-          "in_progress": "Sie können das System normal weiter verwenden, während die Migration im Hintergrund läuft.",
-          "dual_write": "Migration läuft. Ihre Daten sind sicher - alle neuen Erkennungen werden in beide Datenbanken gespeichert. Sie können BirdNET-Go normal weiter nutzen.",
-          "migrating": "Kopiere Ihre bestehenden Erkennungen in die neue Datenbank. Dies kann je nach Anzahl der Erkennungen eine Weile dauern. Sie können jederzeit pausieren und fortsetzen.",
-          "validating": "Überprüfe, ob alle Datensätze korrekt kopiert wurden. Fast fertig!",
-          "cutover": "Wechsle zur neuen Datenbank. Das dauert nur einen Moment.",
-          "paused": "Migration ist pausiert. Ihre Daten sind sicher. Setzen Sie fort, wenn Sie bereit sind."
-        },
-        "actions": {
-          "start": "Migration starten",
-          "pause": "Pausieren",
-          "resume": "Fortsetzen",
-          "cancel": "Abbrechen",
-          "rollback": "Zurücksetzen",
-          "retryValidation": "Validierung wiederholen"
-        },
-        "confirmCancel": {
-          "title": "Migration abbrechen?",
-          "message": "Dies stoppt die Migration und setzt den Status auf Leerlauf zurück. Sie können die Migration später sicher neu starten - Datensätze werden nicht dupliziert.",
-          "confirm": "Ja, abbrechen",
-          "dismiss": "Nein, weiterlaufen lassen"
-        },
-        "confirmRollback": {
-          "title": "Migration zurücksetzen?",
-          "message": "Dies setzt auf die Legacy-Datenbank zurück. Neue Erkennungen seit der Migration bleiben in der erweiterten Datenbank erhalten, sind aber nicht sichtbar, bis die Migration erneut ausgeführt wird.",
-          "confirm": "Ja, zurücksetzen",
-          "dismiss": "Nein, beibehalten"
-        },
-        "errors": {
-          "startFailed": "Fehler beim Starten der Migration",
-          "pauseFailed": "Fehler beim Pausieren der Migration",
-          "resumeFailed": "Fehler beim Fortsetzen der Migration",
-          "cancelFailed": "Fehler beim Abbrechen der Migration",
-          "rollbackFailed": "Fehler beim Zurücksetzen der Migration",
-          "fetchFailed": "Fehler beim Abrufen des Migrationsstatus",
-          "retryValidationFailed": "Fehler beim Wiederholen der Validierung"
-        },
-        "worker": {
-          "running": "Worker läuft",
-          "paused": "Worker pausiert",
-          "stopped": "Worker gestoppt"
-        },
-        "prerequisites": {
-          "title": "Prüfungen vor der Migration",
-          "rerunChecks": "Prüfungen wiederholen",
-          "critical": "Kritisch",
-          "allPassed": "Alle Prüfungen bestanden - bereit zur Migration",
-          "criticalIssues": "{count} kritische(s) Problem(e) muss/müssen behoben werden",
-          "warningsCount": "{count} Warnung(en)",
-          "running": "Führe Vorab-Prüfungen durch...",
-          "checkingStep": "Schritt {current} von {total}",
-          "errors": {
-            "fetchFailed": "Fehler beim Abrufen der Voraussetzungen"
-          },
-          "checks": {
-            "state_idle": {
-              "name": "Migrationsstatus"
-            },
-            "disk_space": {
-              "name": "Speicherplatz"
-            },
-            "legacy_accessible": {
-              "name": "Datenbankverbindung"
-            },
-            "sqlite_integrity": {
-              "name": "Datenbankintegrität"
-            },
-            "mysql_table_health": {
-              "name": "Tabellengesundheit"
-            },
-            "write_permission": {
-              "name": "Schreibberechtigung"
-            },
-            "mysql_permissions": {
-              "name": "MySQL-Berechtigungen"
-            },
-            "record_count": {
-              "name": "Datensatzanzahl"
-            },
-            "existing_v2_data": {
-              "name": "Vorhandene Migrationsdaten"
-            },
-            "no_active_locks": {
-              "name": "Aktive Sperren"
-            },
-            "memory_available": {
-              "name": "Verfügbarer Speicher"
-            },
-            "mysql_max_packet": {
-              "name": "MySQL Max Packet"
-            },
-            "mysql_timeout": {
-              "name": "MySQL Timeout"
-            }
-          },
-          "passedCount": "{passed}/{total} bestanden",
-          "criticalCount": "{count} kritisch",
-          "warningCount": "{count} Warnung(en)",
-          "rerun": "Erneut prüfen",
-          "showDetails": "Details anzeigen",
-          "hideDetails": "Details ausblenden",
-          "status": {
-            "passed": "Bestanden",
-            "failed": "Fehlgeschlagen",
-            "error": "Fehler",
-            "warning": "Warnung",
-            "skipped": "Übersprungen"
-          }
-        },
-        "requiredNote": "Die Datenbankmigration ist für kommende BirdNET-Go-Funktionen erforderlich, die das neue normalisierte Datenbankschema nutzen. Neue Funktionen sind erst nach Abschluss der Migration verfügbar.",
-        "starting": "Migration wird gestartet...",
-        "confirmDialog": {
-          "title": "Datenbankmigration starten",
-          "message": "Die Migration kopiert Ihre Erkennungsdaten von der aktuellen Datenbank in eine neue normalisierte Datenbank. Ihre ursprüngliche Datenbank bleibt unverändert. Es wird jedoch empfohlen, ein Backup zu erstellen, falls unerwartete Probleme auftreten.",
-          "checkbox": "Ich bestätige, dass ich meine Datenbank gesichert habe oder die Risiken verstehe, ohne Backup fortzufahren.",
-          "note": "Sie können ein Backup über die Schaltfläche \"Backup herunterladen\" oben herunterladen."
-        },
-        "details": {
-          "title": "Datenbankdetails",
-          "detections": "{count} Erkennungen",
-          "lastBackup": "Letzte Sicherung: {date}",
-          "noBackups": "Keine Sicherungen",
-          "integrity": "Integrität: {status}"
-        },
-        "strip": {
-          "legacy": "Legacy",
-          "v2Target": "V2 (Ziel)",
-          "active": "Aktiv",
-          "migration": "Migration",
-          "complete": "Abgeschlossen",
-          "recordsMigrated": "{count} Datensätze migriert",
-          "readyToMigrate": "Bereit zur Migration",
-          "recordsInLegacy": "{count} Datensätze in Legacy",
-          "comparingRecords": "Datensatzanzahl wird verglichen...",
-          "validationFailed": "Validierung fehlgeschlagen",
-          "rate": "Rate",
-          "recPerSec": "{rate} Dat./s",
-          "dayAvg": "~{count} / Tag Durchschn.",
-          "dayHistory": "30-Tage-Verlauf"
-        }
-      },
       "legacy": {
         "title": "Legacy-Datenbank",
         "fetchFailed": "Legacy-Datenbankstatus konnte nicht abgerufen werden",
         "cleanup": {
           "title": "Legacy-Datenbank bereinigen",
+          "description": "Diese Datenbank ist jetzt offline und wird nicht mehr verwendet. Alle Ihre Daten wurden in die erweiterte Datenbank migriert.",
+          "recommendation": "Es wird empfohlen, diese Datenbank zu löschen, um Speicherplatz freizugeben.",
           "location": "Speicherort",
           "size": "Größe",
           "records": "Einträge",
@@ -1274,9 +1144,7 @@
           "confirmMessage": "Sie sind dabei, die Legacy-Datenbank ({size}) dauerhaft zu löschen. Diese Aktion kann nicht rückgängig gemacht werden.",
           "confirmCheckbox": "Ich verstehe, dass dies die Legacy-Datenbank dauerhaft löscht",
           "cancelButton": "Abbrechen",
-          "deleteConfirmButton": "Dauerhaft löschen",
-          "description": "Diese Datenbank ist jetzt offline und wird nicht mehr verwendet. Alle Ihre Daten wurden in die erweiterte Datenbank migriert.",
-          "recommendation": "Es wird empfohlen, diese Datenbank zu löschen, um Speicherplatz freizugeben."
+          "deleteConfirmButton": "Dauerhaft löschen"
         }
       },
       "v2": {
@@ -1294,6 +1162,7 @@
       "dashboard": {
         "title": "Datenbank-Dashboard",
         "fetchFailed": "Datenbankübersicht konnte nicht abgerufen werden",
+        "loading": "Laden...",
         "metrics": {
           "readLatency": "Leselatenz",
           "writeLatency": "Schreiblatenz",
@@ -1348,6 +1217,8 @@
         },
         "detectionRate": {
           "title": "Erkennungsrate (24h)",
+          "chartLabel": "Erkennungsrate über 24 Stunden",
+          "detectionsTooltip": "{count} Erkennungen",
           "perHour": "/Std",
           "min": "Min",
           "avg": "Durchschn.",
@@ -1356,9 +1227,7 @@
           "backupSize": "Sicherungsgröße",
           "createBackup": "Sicherung erstellen",
           "mysqlHost": "Host",
-          "mysqlBackupNote": "MySQL-Backups sollten über mysqldump oder Ihre MySQL-Administrationswerkzeuge verwaltet werden.",
-          "chartLabel": "Erkennungsrate über 24 Stunden",
-          "detectionsTooltip": "{count} Erkennungen"
+          "mysqlBackupNote": "MySQL-Backups sollten über mysqldump oder Ihre MySQL-Administrationswerkzeuge verwaltet werden."
         },
         "tables": {
           "title": "Tabellen",
@@ -1368,8 +1237,7 @@
           "rows": "Zeilen",
           "size": "Größe",
           "usage": "Nutzung"
-        },
-        "loading": "Laden..."
+        }
       },
       "backup": {
         "download": "Backup herunterladen",
@@ -1401,7 +1269,207 @@
           }
         }
       },
-      "notInitialized": "Nicht initialisiert"
+      "notInitialized": "Nicht initialisiert",
+      "migration": {
+        "title": "Datenbankmigration",
+        "description": "Von Legacy-Schema zu normalisiertem v2-Schema migrieren",
+        "requiredNote": "Die Datenbankmigration ist für kommende BirdNET-Go-Funktionen erforderlich, die das neue normalisierte Datenbankschema nutzen. Neue Funktionen sind erst nach Abschluss der Migration verfügbar.",
+        "completedTitle": "Migration abgeschlossen",
+        "completedNote": "Ihre Datenbank wurde erfolgreich auf das neue Schema migriert. Bitte starten Sie BirdNET-Go neu, um zur neuen Datenbank zu wechseln. Hinweis: Die neue Datenbank ist kleiner, weil sie Daten effizienter speichert - das ist normal und alle Ihre Daten sind erhalten.",
+        "starting": "Migration wird gestartet...",
+        "status": {
+          "idle": "Bereit zum Starten",
+          "initializing": "Initialisierung",
+          "dual_write": "Dual-Write aktiv",
+          "migrating": "Migriere Primärdaten",
+          "migrating_predictions": "Migriere Sekundärdaten",
+          "paused": "Pausiert",
+          "validating": "Validierung",
+          "cutover": "Umstellung läuft",
+          "completed": "Migration abgeschlossen",
+          "failed": "Validierung fehlgeschlagen"
+        },
+        "progress": {
+          "title": "Migrationsfortschritt",
+          "records": "Datensätze",
+          "paused": "Migration pausiert",
+          "percent": "{percent}%",
+          "rate": "{rate} Datensätze/Sek",
+          "rateValue": "{rate} Dat/s",
+          "remaining": "Verbleibend: {time}",
+          "eta": "Geschätzte Restzeit",
+          "dirtyIds": "{count} Datensätze ausstehend",
+          "completedTitle": "Migration abgeschlossen",
+          "completedBody": "Alle {count} Datensätze wurden erfolgreich in die V2-Datenbank migriert. Die Anwendung verwendet V2 nach dem Neustart als primäre Datenbank.",
+          "restartTitle": "Neustart erforderlich",
+          "restartBody": "Starten Sie die Anwendung neu, um zur V2-Datenbank zu wechseln. Die Bereinigung der Legacy-Datenbank ist nach dem Neustart verfügbar.",
+          "fallbackError": "Abweichung der Datensatzanzahl zwischen Legacy- und V2-Datenbank. Einige Datensätze wurden möglicherweise nicht korrekt migriert.",
+          "migrateInfo": "Die Migration überträgt {count} Datensätze von der Legacy-Datenbank in das neue V2-Schema. Der Dual-Write-Modus stellt sicher, dass während der Migration keine Daten verloren gehen.",
+          "sourceLegacy": "Quelle (Legacy)",
+          "targetV2": "Ziel (V2)",
+          "recordsLabel": "Datensätze",
+          "sizeLabel": "Größe",
+          "prerequisitesNotMet": "Voraussetzungen nicht erfüllt – beheben Sie die kritischen Probleme unten",
+          "validatingTitle": "Daten werden überprüft",
+          "validatingBody": "{count} Legacy-Datensätze werden mit der V2-Datenbank verglichen...",
+          "dirtyRecordsCatchup": "{count} schmutzige Datensätze — Nachholabgleich wird versucht",
+          "cutoverTitle": "Umstellung wird abgeschlossen",
+          "cutoverBody": "Übergang zur V2-Datenbank wird abgeschlossen...",
+          "migratingPhase": "Migriere {phase}",
+          "progressLabel": "Fortschritt",
+          "ofRecords": "/ {count} Datensätze",
+          "percentComplete": "{percent}% abgeschlossen",
+          "recordsPerSec": "{rate} Datensätze/Sek.",
+          "calculating": "Berechne...",
+          "dirtyWriteFailed": "{count} Datensätze konnten nicht geschrieben werden — werden bei der Validierung abgeglichen"
+        },
+        "details": {
+          "title": "Datenbankdetails",
+          "detections": "{count} Erkennungen",
+          "lastBackup": "Letzte Sicherung: {date}",
+          "noBackups": "Keine Sicherungen",
+          "integrity": "Integrität: {status}"
+        },
+        "strip": {
+          "legacy": "Legacy",
+          "v2Target": "V2 (Ziel)",
+          "active": "Aktiv",
+          "migration": "Migration",
+          "complete": "Abgeschlossen",
+          "recordsMigrated": "{count} Datensätze migriert",
+          "readyToMigrate": "Bereit zur Migration",
+          "recordsInLegacy": "{count} Datensätze in Legacy",
+          "comparingRecords": "Datensatzanzahl wird verglichen...",
+          "validationFailed": "Validierung fehlgeschlagen",
+          "rate": "Rate",
+          "recPerSec": "{rate} Dat./s",
+          "dayAvg": "~{count} / Tag Durchschn.",
+          "dayHistory": "30-Tage-Verlauf"
+        },
+        "phase": {
+          "indicator": "Phase {current} von {total}: ",
+          "detections": "Migriere Primärerkennungen",
+          "predictions": "Migriere Sekundärerkennungen",
+          "reviews": "Migriere Überprüfungen",
+          "comments": "Migriere Kommentare",
+          "locks": "Migriere Sperren"
+        },
+        "notes": {
+          "in_progress": "Sie können das System normal weiter verwenden, während die Migration im Hintergrund läuft.",
+          "dual_write": "Migration läuft. Ihre Daten sind sicher - alle neuen Erkennungen werden in beide Datenbanken gespeichert. Sie können BirdNET-Go normal weiter nutzen.",
+          "migrating": "Kopiere Ihre bestehenden Erkennungen in die neue Datenbank. Dies kann je nach Anzahl der Erkennungen eine Weile dauern. Sie können jederzeit pausieren und fortsetzen.",
+          "validating": "Überprüfe, ob alle Datensätze korrekt kopiert wurden. Fast fertig!",
+          "cutover": "Wechsle zur neuen Datenbank. Das dauert nur einen Moment.",
+          "paused": "Migration ist pausiert. Ihre Daten sind sicher. Setzen Sie fort, wenn Sie bereit sind."
+        },
+        "actions": {
+          "start": "Migration starten",
+          "pause": "Pausieren",
+          "resume": "Fortsetzen",
+          "cancel": "Abbrechen",
+          "rollback": "Zurücksetzen",
+          "retryValidation": "Validierung wiederholen"
+        },
+        "confirmDialog": {
+          "title": "Datenbankmigration starten",
+          "message": "Die Migration kopiert Ihre Erkennungsdaten von der aktuellen Datenbank in eine neue normalisierte Datenbank. Ihre ursprüngliche Datenbank bleibt unverändert. Es wird jedoch empfohlen, ein Backup zu erstellen, falls unerwartete Probleme auftreten.",
+          "checkbox": "Ich bestätige, dass ich meine Datenbank gesichert habe oder die Risiken verstehe, ohne Backup fortzufahren.",
+          "note": "Sie können ein Backup über die Schaltfläche \"Backup herunterladen\" oben herunterladen."
+        },
+        "confirmCancel": {
+          "title": "Migration abbrechen?",
+          "message": "Dies stoppt die Migration und setzt den Status auf Leerlauf zurück. Sie können die Migration später sicher neu starten - Datensätze werden nicht dupliziert.",
+          "confirm": "Ja, abbrechen",
+          "dismiss": "Nein, weiterlaufen lassen"
+        },
+        "confirmRollback": {
+          "title": "Migration zurücksetzen?",
+          "message": "Dies setzt auf die Legacy-Datenbank zurück. Neue Erkennungen seit der Migration bleiben in der erweiterten Datenbank erhalten, sind aber nicht sichtbar, bis die Migration erneut ausgeführt wird.",
+          "confirm": "Ja, zurücksetzen",
+          "dismiss": "Nein, beibehalten"
+        },
+        "errors": {
+          "startFailed": "Fehler beim Starten der Migration",
+          "pauseFailed": "Fehler beim Pausieren der Migration",
+          "resumeFailed": "Fehler beim Fortsetzen der Migration",
+          "cancelFailed": "Fehler beim Abbrechen der Migration",
+          "rollbackFailed": "Fehler beim Zurücksetzen der Migration",
+          "retryValidationFailed": "Fehler beim Wiederholen der Validierung",
+          "fetchFailed": "Fehler beim Abrufen des Migrationsstatus"
+        },
+        "worker": {
+          "running": "Worker läuft",
+          "paused": "Worker pausiert",
+          "stopped": "Worker gestoppt"
+        },
+        "prerequisites": {
+          "title": "Prüfungen vor der Migration",
+          "rerunChecks": "Prüfungen wiederholen",
+          "critical": "Kritisch",
+          "allPassed": "Alle Prüfungen bestanden - bereit zur Migration",
+          "criticalIssues": "{count} kritische(s) Problem(e) muss/müssen behoben werden",
+          "warningsCount": "{count} Warnung(en)",
+          "running": "Führe Vorab-Prüfungen durch...",
+          "checkingStep": "Schritt {current} von {total}",
+          "passedCount": "{passed}/{total} bestanden",
+          "criticalCount": "{count} kritisch",
+          "warningCount": "{count} Warnung(en)",
+          "rerun": "Erneut prüfen",
+          "showDetails": "Details anzeigen",
+          "hideDetails": "Details ausblenden",
+          "status": {
+            "passed": "Bestanden",
+            "failed": "Fehlgeschlagen",
+            "error": "Fehler",
+            "warning": "Warnung",
+            "skipped": "Übersprungen"
+          },
+          "errors": {
+            "fetchFailed": "Fehler beim Abrufen der Voraussetzungen"
+          },
+          "checks": {
+            "state_idle": {
+              "name": "Migrationsstatus"
+            },
+            "disk_space": {
+              "name": "Speicherplatz"
+            },
+            "legacy_accessible": {
+              "name": "Datenbankverbindung"
+            },
+            "sqlite_integrity": {
+              "name": "Datenbankintegrität"
+            },
+            "mysql_table_health": {
+              "name": "Tabellengesundheit"
+            },
+            "write_permission": {
+              "name": "Schreibberechtigung"
+            },
+            "mysql_permissions": {
+              "name": "MySQL-Berechtigungen"
+            },
+            "record_count": {
+              "name": "Datensatzanzahl"
+            },
+            "existing_v2_data": {
+              "name": "Vorhandene Migrationsdaten"
+            },
+            "no_active_locks": {
+              "name": "Aktive Sperren"
+            },
+            "memory_available": {
+              "name": "Verfügbarer Speicher"
+            },
+            "mysql_max_packet": {
+              "name": "MySQL Max Packet"
+            },
+            "mysql_timeout": {
+              "name": "MySQL Timeout"
+            }
+          }
+        }
+      }
     },
     "metrics": {
       "cpu": "CPU",
@@ -1432,6 +1500,30 @@
       "free": "frei",
       "ram": "RAM"
     }
+  },
+  "terminal": {
+    "title": "Terminal",
+    "disabled": "Terminal ist deaktiviert",
+    "disabledDescription": "Das Browser-Terminal ist deaktiviert. Aktivieren Sie es unter Einstellungen → Sicherheit, um diese Funktion zu nutzen.",
+    "connected": "Verbunden",
+    "disconnected": "Getrennt",
+    "connecting": "Verbinde...",
+    "connectionError": "Verbindung fehlgeschlagen",
+    "connectionClosed": "Verbindung getrennt",
+    "securityWarning": "Warnung: Dieses Terminal bietet direkten Shell-Zugang zum Host-System. Nur in vertrauenswürdigen Netzwerken aktivieren.",
+    "copySelection": "Auswahl kopieren",
+    "expand": "Erweitern",
+    "collapse": "Reduzieren",
+    "fullscreen": "Vollbild",
+    "exitFullscreen": "Vollbild verlassen",
+    "colorTheme": "Farbschema",
+    "themeDark": "Dunkel",
+    "themeLight": "Hell",
+    "themeHighContrast": "Hoher Kontrast",
+    "detach": "In neuem Fenster öffnen",
+    "detached": "Terminal ist abgetrennt",
+    "detachedDescription": "Das Terminal läuft in einem separaten Fenster. Schließen Sie dieses Fenster, um es hierher zurückzuholen.",
+    "reattach": "Wieder anhängen"
   },
   "analytics": {
     "title": "Übersicht",
@@ -1616,14 +1708,15 @@
     "title": "Einstellungen - BirdNET-Go",
     "loading": "Einstellungen werden geladen...",
     "sections": {
+      "analysis": "Analyse",
       "node": "Allgemein",
       "userinterface": "Oberfläche",
       "audio": "Audio",
       "filters": "Filter",
       "integration": "Integrationen",
-      "notifications": "Benachrichtigungen",
       "security": "Sicherheit",
       "species": "Arten",
+      "notifications": "Benachrichtigungen",
       "support": "Unterstützung"
     },
     "notFound": {
@@ -1640,11 +1733,29 @@
       "unsavedChanges": "Ungespeicherte Änderungen",
       "toolbar": "Einstellungsaktionen"
     },
+    "errors": {
+      "loadFailed": "Einstellungen konnten nicht geladen werden",
+      "saveFailed": "Einstellungen konnten nicht gespeichert werden",
+      "databaseStatsFailed": "Datenbankstatistiken konnten nicht geladen werden",
+      "csvDownloadFailed": "CSV-Download fehlgeschlagen"
+    },
     "card": {
       "changed": "geändert",
       "changedAriaLabel": "Einstellungen geändert"
     },
+    "tabs": {
+      "navigation": "Navigationsreiter der Einstellungen",
+      "hasChanges": "Dieser Reiter hat ungespeicherte Änderungen",
+      "setAsDefault": "Als Standard festlegen",
+      "defaultIndicator": "Standard-Eingabequelle"
+    },
     "main": {
+      "tabs": {
+        "general": "Allgemein",
+        "detection": "Erkennung",
+        "location": "Standort",
+        "database": "Datenbank"
+      },
       "sections": {
         "main": {
           "title": "Haupteinstellungen",
@@ -1660,6 +1771,7 @@
         },
         "customClassifier": {
           "title": "Benutzerdefinierter BirdNET-Klassifikator",
+          "description": "Konfigurieren Sie benutzerdefinierte BirdNET-Modell- und Label-Dateien für spezialisierte Erkennung",
           "modelPath": {
             "label": "Modellpfad (Neustart erforderlich)",
             "placeholder": "Pfad zur Modelldatei",
@@ -1669,11 +1781,11 @@
             "label": "Label-Pfad (Neustart erforderlich)",
             "placeholder": "Pfad zur Labels-Datei",
             "helpText": "Pfad zur externen Modell-Labels-Datei, .zip- oder .txt-Datei. Geben Sie den absoluten oder relativen Pfad zur birdnet-go-Binärdatei ein. Leer lassen, um die standardmäßig eingebetteten Labels zu verwenden."
-          },
-          "description": "Konfigurieren Sie benutzerdefinierte BirdNET-Modell- und Label-Dateien für spezialisierte Erkennung"
+          }
         },
         "dynamicThreshold": {
           "title": "Dynamischer Schwellenwert",
+          "description": "Erkennungsempfindlichkeit automatisch basierend auf vorherigen Beobachtungen anpassen",
           "enable": {
             "label": "Dynamischen Schwellenwert aktivieren (BirdNET-Go-spezifische Funktion)",
             "helpText": "Aktiviert die dynamische Konfidenzschwellenwert-Funktion für adaptivere Vogelruferkennung."
@@ -1689,8 +1801,7 @@
           "expireTime": {
             "label": "Ablaufzeit des dynamischen Schwellenwerts (Stunden)",
             "helpText": "Die Anzahl der Stunden, in denen die dynamischen Schwellenwertanpassungen gültig bleiben. Nach diesem Zeitraum wird der dynamische Schwellenwert zurückgesetzt."
-          },
-          "description": "Erkennungsempfindlichkeit automatisch basierend auf vorherigen Beobachtungen anpassen"
+          }
         },
         "falsePositiveFilter": {
           "title": "Falsch-Positiv-Filter",
@@ -1709,10 +1820,21 @@
           },
           "hardwareNote": "Die Stufen \"Streng\" und \"Maximum\" erfordern höhere Überlappungseinstellungen und mehr CPU-Ressourcen. RPi 4 oder bessere Hardware ist für diese Stufen erforderlich.",
           "overlapAdjusted": "Überlappungseinstellung automatisch auf {overlap}s angepasst, um die Filteranforderungen zu erfüllen",
-          "overlapReduced": "Überlappungseinstellung auf {overlap}s reduziert, um der Filterstufe zu entsprechen"
+          "overlapReduced": "Überlappungseinstellung auf {overlap}s reduziert, um der Filterstufe zu entsprechen",
+          "levelNames": {
+            "off": "Aus",
+            "lenient": "Niedrig",
+            "moderate": "Mittel",
+            "balanced": "Ausgewogen",
+            "strict": "Streng",
+            "maximum": "Maximum",
+            "unknown": "Unbekannt"
+          },
+          "warningOff": "Ohne Filterung wird jede Erkennung über dem Konfidenzschwellenwert sofort akzeptiert. Dies erzeugt typischerweise mehrere Fehlerkennungen pro Tag. Selbst eine niedrige Filterung verbessert die Ergebnisqualität erheblich."
         },
         "rangeFilter": {
           "title": "Reichweitenfilter",
+          "description": "Erkennungen auf wahrscheinliche Arten in Ihrer geografischen Region beschränken",
           "stationLocation": {
             "label": "Stationsstandort",
             "helpText": "Stationsstandort, wird zur Abrufung von Wetterdaten und zur Begrenzung von Vogelarten auf die in der Region wahrscheinlichen verwendet."
@@ -1751,8 +1873,7 @@
             "loadingSpecies": "Arten werden geladen...",
             "noSpeciesFound": "Keine Arten mit aktuellen Einstellungen gefunden",
             "close": "Schließen"
-          },
-          "description": "Erkennungen auf wahrscheinliche Arten in Ihrer geografischen Region beschränken"
+          }
         },
         "database": {
           "title": "Datenbankeinstellungen",
@@ -1762,16 +1883,18 @@
             "helpText": "Wählen Sie den Datenbanktyp zum Speichern von Erkennungen."
           },
           "sqlite": {
+            "title": "SQLite-Konfiguration",
+            "description": "Konfigurieren Sie den Speicherort der SQLite-Datenbankdatei",
             "note": "SQLite ist der empfohlene Datenbanktyp für die meisten Benutzer.",
             "path": {
               "label": "SQLite-Datenbankpfad",
               "placeholder": "SQLite-Datenbankpfad eingeben",
               "helpText": "SQLite-Datenbankdateipfad relativ zum Anwendungsverzeichnis"
-            },
-            "title": "SQLite-Konfiguration",
-            "description": "Konfigurieren Sie den Speicherort der SQLite-Datenbankdatei"
+            }
           },
           "mysql": {
+            "title": "MySQL-Konfiguration",
+            "description": "Verbindungseinstellungen für MySQL-Datenbankserver konfigurieren",
             "host": {
               "label": "MySQL-Host",
               "placeholder": "MySQL-Host eingeben",
@@ -1795,9 +1918,7 @@
               "label": "MySQL-Datenbank",
               "placeholder": "MySQL-Datenbanknamen eingeben",
               "helpText": "MySQL-Datenbankname"
-            },
-            "title": "MySQL-Konfiguration",
-            "description": "Verbindungseinstellungen für MySQL-Datenbankserver konfigurieren"
+            }
           },
           "stats": {
             "title": "Datenbankstatistiken",
@@ -1985,13 +2106,8 @@
         "rangeFilterCountFailed": "Fehler beim Laden der Artenanzahl",
         "mapLibraryLoadFailed": "Kartenbibliothek konnte nicht geladen werden. Bitte aktualisieren Sie die Seite.",
         "mapLoadFailed": "Karte konnte nicht geladen werden. Bitte versuchen Sie, die Seite zu aktualisieren.",
-        "modalMapLoadFailed": "Modalkarte konnte nicht geladen werden. Bitte schließen und öffnen Sie das Modal erneut."
-      },
-      "tabs": {
-        "general": "Allgemein",
-        "detection": "Erkennung",
-        "location": "Standort",
-        "database": "Datenbank"
+        "modalMapLoadFailed": "Modalkarte konnte nicht geladen werden. Bitte schließen und öffnen Sie das Modal erneut.",
+        "mapUnavailable": "Karte nicht verfügbar: WebGL wird in diesem Browser nicht unterstützt. Sie können Ihren Standort weiterhin über die Koordinatenfelder oben festlegen."
       }
     },
     "support": {
@@ -2348,8 +2464,11 @@
             "name": "Gotify",
             "server": {
               "label": "Server-URL",
-              "placeholder": "gotify.example.com",
-              "helpText": "Ihr Gotify-Server-Hostname (ohne https://)"
+              "placeholder": "gotify.example.com:8070",
+              "helpText": "Ihr Gotify-Server-Hostname und Port"
+            },
+            "protocol": {
+              "label": "Protokoll"
             },
             "token": {
               "label": "Anwendungstoken",
@@ -2446,26 +2565,27 @@
       }
     },
     "filters": {
+      "title": "Filter",
       "privacyFiltering": {
         "title": "Datenschutzfilterung",
         "description": "Die Datenschutzfilterung verhindert das Speichern von Audioclips, wenn menschliche Stimmen erkannt werden",
         "enable": "Datenschutzfilterung aktivieren",
+        "disabled": "Datenschutzfilterung ist deaktiviert",
         "confidenceLabel": "Konfidenzschwelle für Menschenerkennung",
-        "confidenceHelp": "Legen Sie das Konfidenzniveau für die Erkennung menschlicher Stimmen fest, niedrigere Werte machen den Filter empfindlicher",
-        "disabled": "Datenschutzfilterung ist deaktiviert"
+        "confidenceHelp": "Legen Sie das Konfidenzniveau für die Erkennung menschlicher Stimmen fest, niedrigere Werte machen den Filter empfindlicher"
       },
       "falsePositivePrevention": {
         "title": "Falsch-Positiv-Prävention",
         "description": "Falscherkennungsfilter konfigurieren",
         "enableDogBark": "Hundebellenfilter aktivieren",
+        "disabled": "Hundebellenfilter ist deaktiviert",
         "confidenceLabel": "Konfidenzschwelle",
         "confidenceHelp": "Legen Sie das Konfidenzniveau für die Erkennung von Hundebellen fest, niedrigere Werte machen den Filter empfindlicher",
         "expireTimeLabel": "Ablaufzeit für Hundebellen (Minuten)",
         "expireTimeHelp": "Legen Sie fest, wie lange ein erkanntes Hundebellen gespeichert wird",
         "addDogBarkSpeciesLabel": "Hundebellen-Arten hinzufügen",
         "addDogBarkSpeciesHelp": "Suchen und fügen Sie Arten hinzu, die mit Hundebellen verwechselt werden könnten",
-        "addSpeciesButton": "Hinzufügen",
-        "disabled": "Hundebellenfilter ist deaktiviert"
+        "addSpeciesButton": "Hinzufügen"
       },
       "speciesNamePlaceholder": "Artname",
       "typeSpeciesName": "Artname eingeben...",
@@ -2483,8 +2603,7 @@
       },
       "errors": {
         "speciesLoadFailed": "Fehler beim Laden der Artenliste. Bitte versuchen Sie es erneut."
-      },
-      "title": "Filter"
+      }
     },
     "integration": {
       "birdweather": {
@@ -2722,6 +2841,96 @@
         "recording": "Aufnahme",
         "retention": "Aufbewahrung"
       },
+      "emptyStates": {
+        "soundCard": {
+          "title": "Keine Soundkarten erkannt",
+          "description": "Auf diesem System wurden keine lokalen Audio-Eingabegeräte gefunden. Dies ist normal für Container- oder Headless-Server-Bereitstellungen.",
+          "errorTitle": "Fehler beim Laden der Geräte",
+          "hintsTitle": "Sie können:",
+          "hints": {
+            "container": "Dies ist normal für Container-/Headless-Bereitstellungen",
+            "streams": "Stattdessen Netzwerk-Streams im Streams-Tab konfigurieren",
+            "usb": "Ein USB-Mikrofon anschließen und die Liste aktualisieren"
+          },
+          "refresh": "Geräte aktualisieren",
+          "retry": "Wiederholen"
+        },
+        "streams": {
+          "title": "Keine Streams konfiguriert",
+          "description": "Fügen Sie RTSP- oder Netzwerk-Audio-Streams von IP-Kameras, Mikrofon-Servern oder anderen Streaming-Quellen hinzu.",
+          "hintsTitle": "Erste Schritte:",
+          "hints": {
+            "rtsp": "Geben Sie RTSP-URLs im Format ein: rtsp://ip:port/stream",
+            "multiple": "Sie können mehrere Streams für verschiedene Standorte hinzufügen",
+            "protocol": "Wählen Sie TCP für Zuverlässigkeit oder UDP für geringere Latenz"
+          }
+        }
+      },
+      "soundCard": {
+        "title": "Soundkarte",
+        "description": "Lokales Audio-Eingabegerät konfigurieren",
+        "audioSourceLabel": "Audioquelle (erfordert Anwendungsneustart)",
+        "audioSourceHelp": "Wählen Sie das Audio-Eingabegerät für die Vogelklangerkennung. Änderungen erfordern einen Anwendungsneustart.",
+        "noSoundCardCapture": "Keine Soundkartenaufnahme",
+        "empty": {
+          "title": "Keine Soundkarten erkannt",
+          "description": "Auf diesem System wurden keine lokalen Audio-Eingabegeräte gefunden. Dies ist normal für Container- oder Headless-Server-Bereitstellungen.",
+          "hintsTitle": "Sie können:",
+          "hintStream": "Netzwerk-Streams im Streams-Tab konfigurieren",
+          "hintUsb": "Ein USB-Mikrofon anschließen und die Liste aktualisieren",
+          "goToStreams": "Zu Streams gehen",
+          "refresh": "Geräte aktualisieren"
+        }
+      },
+      "noSources": {
+        "warning": "Keine Audioquellen konfiguriert",
+        "description": "BirdNET-Go benötigt eine Audioeingabe, um Vögel zu erkennen. Bitte konfigurieren Sie mindestens eine Quelle im Soundkarten- oder Streams-Tab."
+      },
+      "soundCards": {
+        "summary": "{count} Soundkartenquelle(n)",
+        "addSource": "Soundkarte hinzufügen",
+        "nameLabel": "Quellenname",
+        "namePlaceholder": "z.B. Mikrofon Vorgarten",
+        "nameHelp": "Ein beschreibender Name für diese Audioquelle",
+        "deviceLabel": "Audiogerät",
+        "devicePlaceholder": "Audiogerät auswählen",
+        "gainLabel": "Verstärkung (dB)",
+        "gainHelp": "Einstellung der Eingangsverstärkung (-40 bis +40 dB)",
+        "sampleRateLabel": "Abtastrate",
+        "sampleRateUnverified": "Unterstützte Raten konnten für dieses Gerät nicht überprüft werden",
+        "sampleRateProbing": "Unterstützte Raten werden erkannt...",
+        "sampleRateExclusive": "Raten über 48 kHz verwenden exklusiven Gerätezugriff unter Linux, wodurch andere Anwendungen die Soundkarte nicht gemeinsam nutzen können",
+        "modelLabel": "Erkennungsmodelle",
+        "modelHelp": "KI-Modelle für diese Audioquelle auswählen",
+        "deleteConfirm": "Diese Soundkartenquelle entfernen?",
+        "emptyState": {
+          "title": "Keine Soundkartenquellen konfiguriert",
+          "description": "Fügen Sie eine Soundkartenquelle hinzu, um mit der Audioaufnahme zur Vogelerkennung zu beginnen.",
+          "hintsTitle": "Erste Schritte",
+          "hints": {
+            "device": "Wählen Sie aus den verfügbaren Audio-Eingabegeräten Ihres Systems",
+            "multiple": "Sie können mehrere Soundkarten für verschiedene Standorte konfigurieren",
+            "model": "Jede Quelle kann ein anderes Erkennungsmodell verwenden (BirdNET, Perch, Bat)"
+          }
+        },
+        "models": {
+          "birdnetDefault": "BirdNET (Standard)",
+          "birdnet": "BirdNET",
+          "perchV2": "Google Perch v2",
+          "bat": "Fledermauserkennung"
+        },
+        "errors": {
+          "nameRequired": "Quellenname ist erforderlich",
+          "deviceRequired": "Audiogerät ist erforderlich",
+          "duplicateName": "Eine Quelle mit diesem Namen existiert bereits",
+          "duplicateDevice": "Dieses Gerät ist bereits konfiguriert"
+        },
+        "compatibility": {
+          "minSampleRate": "Erfordert mindestens {rate}kHz Abtastrate",
+          "recommendedSampleRate": "{rate}kHz empfohlen für beste Ergebnisse",
+          "atLeastOneModel": "Mindestens ein Modell muss ausgewählt sein"
+        }
+      },
       "audioCapture": {
         "title": "Audioaufnahme",
         "description": "Audioaufnahmequelle festlegen, Soundkarte oder RTSP-Stream",
@@ -2729,13 +2938,13 @@
         "audioSourceLabel": "Audioquelle (erfordert Anwendungsneustart)",
         "audioSourceHelp": "Wählen Sie das Audio-Eingabegerät für die Vogelklangerkennung. Änderungen erfordern einen Anwendungsneustart.",
         "noSoundCardCapture": "Keine Soundkartenaufnahme",
+        "noDeviceSelected": "Kein Audiogerät ausgewählt",
+        "refreshDevices": "Aktualisieren",
         "rtspSource": "RTSP-Quelle",
         "rtspTransportLabel": "RTSP-Transportprotokoll",
         "rtspTransportHelp": "TCP ist zuverlässiger, kann aber höhere Latenz haben. UDP ist schneller, kann aber bei schlechten Netzwerken Paketverluste erleiden.",
         "rtspUrlsLabel": "RTSP-Stream-URLs",
         "rtspUrlsHelp": "Geben Sie eine oder mehrere RTSP-Stream-URLs für Netzwerk-Audioquellen ein. Format: rtsp://ip:port/stream. Hinweis: Authentifizierungsdaten sollten aus Sicherheitsgründen separat in Ihren RTSP-Server-Einstellungen konfiguriert werden.",
-        "noDeviceSelected": "Kein Audiogerät ausgewählt",
-        "refreshDevices": "Aktualisieren",
         "deviceSelected": "Soundkarte ausgewählt und bereit zur Aufnahme",
         "availableDevices": "Verfügbare Audiogeräte",
         "active": "Aktiv",
@@ -2760,6 +2969,96 @@
         "badge": "Ruhe",
         "enabledBadge": "Ruhezeiten für diesen Stream aktiviert"
       },
+      "rtspStreams": {
+        "title": "Audio-Stream-Konfiguration",
+        "description": "Netzwerk-Audio-Streams für Remote-Audioaufnahme konfigurieren. Unterstützt RTSP-, HTTP-, HLS-, RTMP- und UDP-Protokolle.",
+        "noStreamsConfigured": "Keine Streams konfiguriert"
+      },
+      "streams": {
+        "streamLabel": "Stream",
+        "nameLabel": "Stream-Name",
+        "enabled": "Aktiviert",
+        "disabled": "Deaktiviert",
+        "namePlaceholder": "z.B. Futterhaus Vorgarten",
+        "nameHelp": "Ein beschreibender Name zur Identifizierung dieses Audiostreams",
+        "urlLabel": "Stream-URL",
+        "urlHelp": "Stream-URL mit optionalen Anmeldedaten eingeben (z.B. rtsp://host:port/pfad). Umgebungsvariablen für Anmeldedaten verwenden.",
+        "typeLabel": "Stream-Typ",
+        "typeHelp": "Stream-Protokoll - automatisch aus URL erkannt",
+        "transportLabel": "Protokoll",
+        "summary": "{count} Stream(s) konfiguriert",
+        "healthy": "gesund",
+        "unhealthy": "fehlerhaft",
+        "unknown": "unbekannt",
+        "refresh": "Aktualisieren",
+        "addStream": "Stream hinzufügen",
+        "testRequired": "Führen Sie einen erfolgreichen Streamtest durch, bevor Sie speichern",
+        "deleteConfirm": "Diesen Stream entfernen?",
+        "restartCount": "{count} Mal neu gestartet",
+        "healthLoadError": "Laden des Stream-Status fehlgeschlagen",
+        "status": {
+          "connected": "Verbunden",
+          "connecting": "Verbindung wird hergestellt",
+          "error": "Fehler",
+          "idle": "Inaktiv",
+          "suppressed": "Ruhezeit",
+          "unknown": "Unbekannt"
+        },
+        "emptyState": {
+          "title": "Keine Streams konfiguriert",
+          "description": "Fügen Sie Audiostreams von IP-Kameras, Icecast-Servern oder anderen Netzwerkquellen hinzu.",
+          "hintsTitle": "Erste Schritte",
+          "hints": {
+            "rtsp": "Unterstützt RTSP, HTTP, HLS, RTMP und UDP/RTP Streams",
+            "credentials": "Anmeldedaten können in URL oder über Umgebungsvariablen angegeben werden",
+            "protocol": "TCP ist zuverlässiger für RTSP, UDP hat niedrigere Latenz"
+          }
+        },
+        "errors": {
+          "nameRequired": "Stream-Name ist erforderlich",
+          "duplicateName": "Ein Stream mit diesem Namen existiert bereits",
+          "urlRequired": "Stream-URL ist erforderlich",
+          "invalidUrl": "Ungültiges Stream-URL-Format",
+          "duplicate": "Diese Stream-URL existiert bereits"
+        },
+        "timeline": {
+          "error": "Fehler",
+          "noHistory": "Keine Status- oder Fehlerhistorie verfügbar.",
+          "stateChange": "Statusänderung",
+          "host": "Host",
+          "troubleshooting": "Fehlerbehebung",
+          "from": "Von",
+          "to": "Nach",
+          "reason": "Grund",
+          "eventAt": "Ereignis um {time}"
+        },
+        "diagnostics": {
+          "toggleDiagnostics": "Diagnose umschalten",
+          "processState": "Prozessstatus",
+          "lastData": "Letzte Daten",
+          "restartCount": "Neustarts",
+          "connection": "Verbindung",
+          "stateErrorHistory": "Status- & Fehlerhistorie"
+        },
+        "connectionStatus": {
+          "stable": "Stabil",
+          "degraded": "Beeinträchtigt",
+          "failed": "Fehlgeschlagen",
+          "unknown": "Unbekannt"
+        },
+        "test": {
+          "button": "Stream testen",
+          "probing": "Teste...",
+          "result": "Testergebnis",
+          "error": "Test fehlgeschlagen",
+          "batCompatible": "Fledermaus-kompatibel",
+          "batIncompatible": "Nicht fledermaus-kompatibel"
+        },
+        "batWarning": "Fledermausmodelle erfordern Streams mit einem verlustfreien Codec (PCM) und einer Abtastrate von mindestens 96 kHz. Verwenden Sie die Schaltfläche Stream testen oben, um die Kompatibilität zu überprüfen.",
+        "codecWarning": {
+          "lossy": "Verlustbehaftete Codecs (AAC, Opus, MP3) zerstören Ultraschallfrequenzen über ~20 kHz und machen den Stream für die Fledermauserkennung ungeeignet."
+        }
+      },
       "audioFilters": {
         "title": "Audiofilter",
         "description": "Standard-Audiofilter für alle Quellen konfigurieren. Quellenspezifische EQ-Einstellungen sind in den jeweiligen Soundkarten-Einstellungen verfügbar.",
@@ -2779,7 +3078,6 @@
         "gainHelp": "Verstärkungs- oder Dämpfungspegel in Dezibel (dB).",
         "attenuation": "Dämpfung",
         "attenuationHelp": "Filterabrollrate. Höhere Werte sorgen für steilere Dämpfung gefilterter Frequenzen.",
-        "filterHelp": "Fügen Sie mehrere Filter hinzu, um den Frequenzgang für optimale Vogelerkennung in Ihrer Umgebung zu gestalten.",
         "attenuationLevels": {
           "0db": "0dB",
           "12db": "12dB",
@@ -2787,6 +3085,7 @@
           "36db": "36dB",
           "48db": "48dB"
         },
+        "filterHelp": "Fügen Sie mehrere Filter hinzu, um den Frequenzgang für optimale Vogelerkennung in Ihrer Umgebung zu gestalten.",
         "graph": {
           "flatResponse": "Flacher Frequenzgang (Keine Filter aktiv)",
           "frequency": "Frequenz (Hz)",
@@ -2798,14 +3097,14 @@
         "description": "Umgebungsschallpegel überwachen und melden",
         "enable": "Schallpegelüberwachung aktivieren",
         "enableHelp": "Umgebungsgeräuschpegel verfolgen, um Ihre Aufnahmeumgebung zu verstehen und mit Vogelaktivitätsmustern zu korrelieren.",
+        "disabled": "Schallpegelüberwachung ist deaktiviert",
         "intervalLabel": "Messintervall (Sekunden)",
         "intervalHelp": "Wie oft Schallpegel gemessen und gemeldet werden. Niedrigere Werte liefern detailliertere Daten, verbrauchen aber mehr Ressourcen. Mindestens 5 Sekunden, empfohlen 60 Sekunden.",
         "dataOutputTitle": "Schallpegeldatenausgabe",
         "dataOutputDescription": "Wenn aktiviert, werden Schallpegelmessungen veröffentlicht über:",
         "mqttTopic": "MQTT-Topic:",
         "sseEndpoint": "SSE-Endpunkt:",
-        "prometheusMetrics": "Prometheus-Metriken:",
-        "disabled": "Schallpegelüberwachung ist deaktiviert"
+        "prometheusMetrics": "Prometheus-Metriken:"
       },
       "clipSettings": {
         "title": "Clip-Einstellungen",
@@ -2815,8 +3114,8 @@
         "title": "Clip-Aufnahme-Einstellungen",
         "description": "Konfigurieren Sie Audioaufnahme, Format und Speicheroptionen für erkannte Vogelrufe.",
         "enable": "Clip-Aufnahme aktivieren",
-        "disabled": "Clip-Aufnahme ist deaktiviert",
         "enableHelp": "Speichern Sie Audioclips von erkannten Vogelrufen zur Überprüfung, zum Teilen oder zum Erstellen eigener Datensätze.",
+        "disabled": "Clip-Aufnahme ist deaktiviert",
         "captureSettings": "Aufnahmeeinstellungen",
         "lengthLabel": "Aufnahmelänge",
         "lengthHelp": "Dauer der Audioaufnahme für jede Erkennung (10-60 Sekunden). Längere Clips bieten mehr Kontext, benötigen aber mehr Speicherplatz.",
@@ -2827,6 +3126,7 @@
         "normalization": "Audio-Normalisierung",
         "normalizationEnable": "Lautheitsnormalisierung aktivieren",
         "normalizationHelp": "Audiopegel automatisch an den EBU R128 Broadcast-Standard anpassen für konsistente Wiedergabelautstärke über alle Clips.",
+        "normalizationDisabled": "Audio-Normalisierung ist deaktiviert",
         "targetLUFSLabel": "Ziellautheit (LUFS)",
         "targetLUFSHelp": "Integrierte Ziellautheit in LUFS (Loudness Units relative to Full Scale). -23 LUFS ist der EBU R128 Broadcast-Standard. Bereich: -40 bis -10 LUFS.",
         "loudnessRangeLabel": "Lautheitsbereich (LU)",
@@ -2843,7 +3143,6 @@
         "bitrateLabel": "Bitrate",
         "bitrateHelp": "Audio-Kompressionsbitrate für verlustbehaftete Formate. Bereich: {min}-{max} kbps. Höhere Werte bieten bessere Qualität, aber größere Dateien.",
         "losslessNote": "Verlustfreie Formate bewahren die ursprüngliche Audioqualität ohne Kompressionsartefakte.",
-        "normalizationDisabled": "Audio-Normalisierung ist deaktiviert",
         "disabledInfo": "Aktivieren Sie die Clip-Aufnahme oben, um Clip-Einstellungen, Dateiformat und Speicheroptionen zu konfigurieren."
       },
       "extendedCapture": {
@@ -2934,480 +3233,10 @@
         "invalidBitrate": "Ungültiger Bitratenwert",
         "invalidRetentionPolicy": "Ungültige Aufbewahrungsrichtlinie"
       },
-      "emptyStates": {
-        "soundCard": {
-          "title": "Keine Soundkarten erkannt",
-          "description": "Auf diesem System wurden keine lokalen Audio-Eingabegeräte gefunden. Dies ist normal für Container- oder Headless-Server-Bereitstellungen.",
-          "errorTitle": "Fehler beim Laden der Geräte",
-          "hintsTitle": "Sie können:",
-          "hints": {
-            "container": "Dies ist normal für Container-/Headless-Bereitstellungen",
-            "streams": "Stattdessen Netzwerk-Streams im Streams-Tab konfigurieren",
-            "usb": "Ein USB-Mikrofon anschließen und die Liste aktualisieren"
-          },
-          "refresh": "Geräte aktualisieren",
-          "retry": "Wiederholen"
-        },
-        "streams": {
-          "title": "Keine Streams konfiguriert",
-          "description": "Fügen Sie RTSP- oder Netzwerk-Audio-Streams von IP-Kameras, Mikrofon-Servern oder anderen Streaming-Quellen hinzu.",
-          "hintsTitle": "Erste Schritte:",
-          "hints": {
-            "rtsp": "Geben Sie RTSP-URLs im Format ein: rtsp://ip:port/stream",
-            "multiple": "Sie können mehrere Streams für verschiedene Standorte hinzufügen",
-            "protocol": "Wählen Sie TCP für Zuverlässigkeit oder UDP für geringere Latenz"
-          }
-        }
-      },
-      "soundCard": {
-        "title": "Soundkarte",
-        "description": "Lokales Audio-Eingabegerät konfigurieren",
-        "audioSourceLabel": "Audioquelle (erfordert Anwendungsneustart)",
-        "audioSourceHelp": "Wählen Sie das Audio-Eingabegerät für die Vogelklangerkennung. Änderungen erfordern einen Anwendungsneustart.",
-        "noSoundCardCapture": "Keine Soundkartenaufnahme",
-        "empty": {
-          "title": "Keine Soundkarten erkannt",
-          "description": "Auf diesem System wurden keine lokalen Audio-Eingabegeräte gefunden. Dies ist normal für Container- oder Headless-Server-Bereitstellungen.",
-          "hintsTitle": "Sie können:",
-          "hintStream": "Netzwerk-Streams im Streams-Tab konfigurieren",
-          "hintUsb": "Ein USB-Mikrofon anschließen und die Liste aktualisieren",
-          "goToStreams": "Zu Streams gehen",
-          "refresh": "Geräte aktualisieren"
-        }
-      },
-      "noSources": {
-        "warning": "Keine Audioquellen konfiguriert",
-        "description": "BirdNET-Go benötigt eine Audioeingabe, um Vögel zu erkennen. Bitte konfigurieren Sie mindestens eine Quelle im Soundkarten- oder Streams-Tab."
-      },
-      "soundCards": {
-        "summary": "{count} Soundkartenquelle(n)",
-        "addSource": "Soundkarte hinzufügen",
-        "nameLabel": "Quellenname",
-        "namePlaceholder": "z.B. Mikrofon Vorgarten",
-        "nameHelp": "Ein beschreibender Name für diese Audioquelle",
-        "deviceLabel": "Audiogerät",
-        "devicePlaceholder": "Audiogerät auswählen",
-        "gainLabel": "Verstärkung (dB)",
-        "gainHelp": "Einstellung der Eingangsverstärkung (-40 bis +40 dB)",
-        "modelLabel": "Erkennungsmodell",
-        "modelHelp": "BirdNET-Modell für diese Quelle",
-        "deleteConfirm": "Diese Soundkartenquelle entfernen?",
-        "emptyState": {
-          "title": "Keine Soundkartenquellen konfiguriert",
-          "description": "Fügen Sie eine Soundkartenquelle hinzu, um mit der Audioaufnahme zur Vogelerkennung zu beginnen.",
-          "hintsTitle": "Erste Schritte",
-          "hints": {
-            "device": "Wählen Sie aus den verfügbaren Audio-Eingabegeräten Ihres Systems",
-            "multiple": "Sie können mehrere Soundkarten für verschiedene Standorte konfigurieren",
-            "model": "Jede Quelle kann ein anderes Erkennungsmodell verwenden (BirdNET, Perch, Bat)"
-          }
-        },
-        "models": {
-          "birdnetDefault": "BirdNET (Standard)",
-          "birdnet": "BirdNET",
-          "perchV2": "Google Perch v2",
-          "bat": "Fledermauserkennung"
-        },
-        "errors": {
-          "nameRequired": "Quellenname ist erforderlich",
-          "deviceRequired": "Audiogerät ist erforderlich",
-          "duplicateName": "Eine Quelle mit diesem Namen existiert bereits",
-          "duplicateDevice": "Dieses Gerät ist bereits konfiguriert"
-        }
-      },
-      "rtspStreams": {
-        "title": "Audio-Stream-Konfiguration",
-        "description": "Netzwerk-Audio-Streams für Remote-Audioaufnahme konfigurieren. Unterstützt RTSP-, HTTP-, HLS-, RTMP- und UDP-Protokolle.",
-        "noStreamsConfigured": "Keine Streams konfiguriert"
-      },
-      "streams": {
-        "streamLabel": "Stream",
-        "nameLabel": "Stream-Name",
-        "enabled": "Aktiviert",
-        "disabled": "Deaktiviert",
-        "namePlaceholder": "z.B. Futterhaus Vorgarten",
-        "nameHelp": "Ein beschreibender Name zur Identifizierung dieses Audiostreams",
-        "urlLabel": "Stream-URL",
-        "urlHelp": "Stream-URL mit optionalen Anmeldedaten eingeben (z.B. rtsp://host:port/pfad). Umgebungsvariablen für Anmeldedaten verwenden.",
-        "typeLabel": "Stream-Typ",
-        "typeHelp": "Stream-Protokoll - automatisch aus URL erkannt",
-        "transportLabel": "Protokoll",
-        "summary": "{count} Stream(s) konfiguriert",
-        "healthy": "gesund",
-        "unhealthy": "fehlerhaft",
-        "unknown": "unbekannt",
-        "refresh": "Aktualisieren",
-        "addStream": "Stream hinzufügen",
-        "deleteConfirm": "Diesen Stream entfernen?",
-        "restartCount": "{count} Mal neu gestartet",
-        "healthLoadError": "Laden des Stream-Status fehlgeschlagen",
-        "status": {
-          "connected": "Verbunden",
-          "connecting": "Verbindung wird hergestellt",
-          "error": "Fehler",
-          "idle": "Inaktiv",
-          "suppressed": "Ruhezeit",
-          "unknown": "Unbekannt"
-        },
-        "emptyState": {
-          "title": "Keine Streams konfiguriert",
-          "description": "Fügen Sie Audiostreams von IP-Kameras, Icecast-Servern oder anderen Netzwerkquellen hinzu.",
-          "hintsTitle": "Erste Schritte",
-          "hints": {
-            "rtsp": "Unterstützt RTSP, HTTP, HLS, RTMP und UDP/RTP Streams",
-            "credentials": "Anmeldedaten können in URL oder über Umgebungsvariablen angegeben werden",
-            "protocol": "TCP ist zuverlässiger für RTSP, UDP hat niedrigere Latenz"
-          }
-        },
-        "errors": {
-          "nameRequired": "Stream-Name ist erforderlich",
-          "duplicateName": "Ein Stream mit diesem Namen existiert bereits",
-          "urlRequired": "Stream-URL ist erforderlich",
-          "invalidUrl": "Ungültiges Stream-URL-Format",
-          "duplicate": "Diese Stream-URL existiert bereits"
-        },
-        "timeline": {
-          "error": "Fehler",
-          "noHistory": "Keine Status- oder Fehlerhistorie verfügbar.",
-          "stateChange": "Statusänderung",
-          "host": "Host",
-          "troubleshooting": "Fehlerbehebung",
-          "from": "Von",
-          "to": "Nach",
-          "reason": "Grund",
-          "eventAt": "Ereignis um {time}"
-        },
-        "diagnostics": {
-          "toggleDiagnostics": "Diagnose umschalten",
-          "processState": "Prozessstatus",
-          "lastData": "Letzte Daten",
-          "restartCount": "Neustarts",
-          "connection": "Verbindung",
-          "stateErrorHistory": "Status- & Fehlerhistorie"
-        },
-        "connectionStatus": {
-          "stable": "Stabil",
-          "degraded": "Beeinträchtigt",
-          "failed": "Fehlgeschlagen",
-          "unknown": "Unbekannt"
-        }
+      "models": {
+        "recommendBoth": "Für die beste Artenerkennung wird empfohlen, sowohl BirdNET als auch Perch gemeinsam auszuführen.",
+        "perchOnlyWarning": "Perch allein erzeugt weniger Erkennungen. Senken Sie den Konfidenzschwellenwert auf 0.50 für aussagekräftige Ergebnisse, oder aktivieren Sie BirdNET für eine bessere Abdeckung."
       }
-    },
-    "species": {
-      "pageLabel": "Arteneinstellungen",
-      "saveError": "Konfiguration für \"{species}\" konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
-      "configUpdated": "Konfiguration für \"{species}\" aktualisiert",
-      "configAdded": "Konfiguration für \"{species}\" hinzugefügt",
-      "duplicateConfigError": "Art \"{species}\" hat bereits eine Konfiguration. Bitte wählen Sie einen anderen Namen.",
-      "activeSpecies": {
-        "title": "Aktive Arten",
-        "tabLabel": "Aktiv",
-        "description": "Arten, die basierend auf Ihrem aktuellen Standort und Filtereinstellungen erkannt werden",
-        "stats": {
-          "species": "Arten",
-          "location": "Standort",
-          "threshold": "Schwellenwert",
-          "updated": "Aktualisiert",
-          "justNow": "Gerade eben",
-          "minutesAgo": "vor {count}m",
-          "hoursAgo": "vor {count}h"
-        },
-        "search": {
-          "placeholder": "Arten suchen..."
-        },
-        "badges": {
-          "included": "Eingeschlossen",
-          "configured": "Konfiguriert"
-        },
-        "empty": {
-          "title": "Keine Arten gefunden",
-          "description": "Konfigurieren Sie Ihren Standort in den Haupteinstellungen, um verfügbare Arten zu sehen"
-        },
-        "noResults": "Keine Arten entsprechen Ihrer Suche",
-        "infoNote": "Diese Liste basiert auf Ihrem Standort und dem Bereichsfilter-Schwellenwert. Manuell hinzugefügte Arten werden immer eingeschlossen.",
-        "retry": "Erneut versuchen",
-        "expand": "Liste erweitern",
-        "collapse": "Liste reduzieren",
-        "downloadCsv": "CSV herunterladen",
-        "errors": {
-          "loadFailed": "Fehler beim Laden der aktiven Artenliste"
-        },
-        "locationNotConfigured": {
-          "title": "Standort nicht konfiguriert",
-          "description": "Legen Sie Ihren Standort in den Haupteinstellungen fest, um Arten in Ihrer Umgebung zu sehen. Der Bereichsfilter verwendet Ihren Standort, um zu bestimmen, welche Arten in der Nähe wahrscheinlich vorkommen.",
-          "action": "Standort konfigurieren"
-        },
-        "columns": {
-          "commonName": "Name",
-          "scientificName": "Wissenschaftlicher Name",
-          "score": "Bewertung",
-          "status": "Status"
-        }
-      },
-      "alwaysInclude": {
-        "title": "Immer Arten einschließen",
-        "tabLabel": "Einschl.",
-        "description": "Arten in dieser Liste werden immer im Bereich der erkannten Arten enthalten sein",
-        "noSpeciesMessage": "Keine Arten zur Einschlussliste hinzugefügt"
-      },
-      "alwaysExclude": {
-        "title": "Immer Arten ausschließen",
-        "tabLabel": "Ausschl.",
-        "description": "Arten in dieser Liste werden immer von der Erkennung ausgeschlossen",
-        "noSpeciesMessage": "Keine Arten zur Ausschlussliste hinzugefügt"
-      },
-      "customConfiguration": {
-        "title": "Benutzerdefinierte Artenkonfiguration",
-        "tabLabel": "Benutzer.",
-        "description": "Artenspezifische Schwellenwerte, Erkennungsintervalle und Aktionen",
-        "helpText": {
-          "intro": "Konfigurieren Sie artenspezifische Einstellungen:",
-          "threshold": "Schwellenwert: Minimaler Konfidenzwert (0-1) für die Erkennung erforderlich",
-          "interval": "Intervall: Mindestzeit in Sekunden zwischen Erkennungen derselben Art (0 = globalen Standardwert verwenden)",
-          "actions": "Aktionen: Benutzerdefinierte Befehle, die ausgeführt werden, wenn diese Art erkannt wird"
-        },
-        "columnHeaders": {
-          "species": "Art",
-          "settings": "Einstellungen",
-          "actions": "Aktionen"
-        },
-        "badges": {
-          "threshold": "Schwellenwert: {value}",
-          "interval": "Intervall: {value}s",
-          "customAction": "Benutzerdefinierte Aktion",
-          "executeDefaults": "+Standards"
-        },
-        "dropdown": {
-          "editConfig": "Konfiguration bearbeiten",
-          "addAction": "Aktion hinzufügen",
-          "remove": "Entfernen"
-        },
-        "labels": {
-          "threshold": "Schwellenwert",
-          "interval": "Intervall",
-          "intervalSeconds": "Intervall (Sek.)",
-          "addButton": "Hinzufügen"
-        },
-        "noConfigurationsMessage": "Keine benutzerdefinierten Artenkonfigurationen hinzugefügt",
-        "addForm": {
-          "speciesPlaceholder": "Artname",
-          "thresholdPlaceholder": "0,5",
-          "intervalPlaceholder": "0"
-        },
-        "addConfiguration": "Konfiguration hinzufügen",
-        "newConfiguration": "Neue Konfiguration",
-        "editing": "Bearbeiten: {species}",
-        "configuredCount": "{count} konfiguriert",
-        "searchPlaceholder": "Zum Suchen eingeben...",
-        "saving": "Speichern...",
-        "save": "Speichern",
-        "cancel": "Abbrechen",
-        "configureActions": "Aktionen konfigurieren",
-        "actionsConfigured": "Konfiguriert",
-        "list": {
-          "threshold": "Schwellenwert:",
-          "interval": "Intervall:",
-          "intervalNone": "Keines",
-          "actionBadge": "Aktion",
-          "editTitle": "Konfiguration bearbeiten",
-          "removeTitle": "Konfiguration entfernen"
-        },
-        "emptyState": {
-          "title": "Noch keine Konfigurationen.",
-          "description": "Klicken Sie auf \"Konfiguration hinzufügen\", um die Artenerkennungseinstellungen anzupassen."
-        }
-      },
-      "synonyms": {
-        "tabLabel": "Synonyme",
-        "description": "Ordnen Sie wissenschaftliche BirdNET-Namen ihren aktualisierten Entsprechungen in einer neueren Taxonomie zu. Wird nur als Fallback beim Abrufen von Vogelbildern von Wikipedia und AviCommons verwendet; benennt Arten weder in Erkennungen noch im Dashboard um.",
-        "helpText": "Um den in der Oberfläche angezeigten Namen einer Art zu ändern, bearbeiten Sie Ihre BirdNET-Labeldatei (Einstellung \"Label-Pfad\" unter Haupteinstellungen).",
-        "birdnetName": "BirdNET-Name",
-        "updatedName": "Aktualisierter wissenschaftlicher Name",
-        "addButton": "Synonym hinzufügen",
-        "emptyState": "Keine Taxonomie-Synonyme konfiguriert",
-        "errors": {
-          "unknownSpecies": "Art nicht in BirdNET-Labels gefunden",
-          "duplicateKey": "Für diese Art existiert bereits ein Synonym",
-          "emptyUpdatedName": "Der neue Name ist erforderlich"
-        }
-      },
-      "actionsModal": {
-        "title": "Aktionen für {species}",
-        "actionType": {
-          "label": "Aktionstyp",
-          "executeCommand": "Befehl ausführen",
-          "onlySupported": "Derzeit werden nur Befehl ausführen-Aktionen unterstützt"
-        },
-        "command": {
-          "label": "Befehl",
-          "helpText": "Geben Sie den vollständigen Pfad zum Befehl oder Skript an, das Sie ausführen möchten"
-        },
-        "parameters": {
-          "label": "Parameter",
-          "helpText": "Diese Werte werden in der aufgeführten Reihenfolge an Ihren Befehl übergeben",
-          "availableTitle": "Verfügbare Parameter",
-          "buttons": {
-            "commonName": "DeutscherName",
-            "scientificName": "WissenschaftlicherName",
-            "confidence": "Konfidenz",
-            "time": "Zeit",
-            "source": "Quelle",
-            "clearParameters": "Parameter löschen"
-          },
-          "placeholder": "Klicken Sie auf die Schaltflächen unten, um Parameter hinzuzufügen, oder geben Sie sie manuell ein",
-          "tooltip": "Verwenden Sie die Schaltflächen unten oder geben Sie direkt ein (kommagetrennt)"
-        },
-        "executeDefaults": {
-          "label": "Auch Standardaktionen ausführen (Datenbankspeicherung, Benachrichtigungen usw.)",
-          "helpText": "Wenn aktiviert, werden sowohl Ihre benutzerdefinierte Aktion als auch die Standardaktionen des Systems ausgeführt. Wenn deaktiviert, wird nur Ihre benutzerdefinierte Aktion ausgeführt."
-        }
-      },
-      "add": "Hinzufügen",
-      "remove": "Entfernen",
-      "addSpeciesToInclude": "Arten zum Einschließen hinzufügen",
-      "addSpeciesToIncludeLabel": "Neue Arten zum Einschließen hinzufügen",
-      "addSpeciesToExclude": "Arten zum Ausschließen hinzufügen",
-      "addSpeciesToExcludeLabel": "Neue Arten zum Ausschließen hinzufügen",
-      "commandPathPlaceholder": "/pfad/zu/ihrem/befehl",
-      "parametersPlaceholder": "Parameter werden hier angezeigt",
-      "errors": {
-        "speciesLoadFailed": "Fehler beim Laden der Artenliste. Bitte versuchen Sie es erneut."
-      },
-      "tracking": {
-        "title": "Verfolgung",
-        "tabLabel": "Verfolgung",
-        "description": "Konfigurieren Sie die Verfolgung neuer Artenerkennungen basierend auf Zeiträumen",
-        "enabled": {
-          "label": "Artenverfolgung aktivieren",
-          "helpText": "Bei Aktivierung verfolgt das System neue Artenerkennungen und kann Benachrichtigungen senden"
-        },
-        "newSpeciesWindowDays": {
-          "label": "Neue Art Fenster (Tage)",
-          "helpText": "Anzahl der Tage, die eine Art nach der Erstentdeckung als 'neu' gilt (1-365)"
-        },
-        "syncIntervalMinutes": {
-          "label": "Synchronisierungsintervall (Minuten)",
-          "helpText": "Wie oft Verfolgungsdaten mit der Datenbank synchronisiert werden (1-1440)"
-        },
-        "notificationSuppressionHours": {
-          "label": "Benachrichtigungsunterdrückung (Stunden)",
-          "helpText": "Stunden zur Unterdrückung doppelter Benachrichtigungen für dieselbe Art (0-8760)"
-        },
-        "yearly": {
-          "title": "Jährliche Verfolgung",
-          "description": "Verfolgen Sie die ersten Ankünfte von Arten jedes Jahr",
-          "enabled": {
-            "label": "Jährliche Verfolgung aktivieren",
-            "helpText": "Verfolgen und benachrichtigen Sie, wenn eine Art zum ersten Mal im Jahr erkannt wird"
-          },
-          "resetMonth": {
-            "label": "Rücksetzungsmonat",
-            "helpText": "Monat, in dem die jährliche Verfolgung zurückgesetzt wird (1-12)"
-          },
-          "resetDay": {
-            "label": "Rücksetzungstag",
-            "helpText": "Tag des Monats, an dem die jährliche Verfolgung zurückgesetzt wird"
-          },
-          "windowDays": {
-            "label": "Fenster (Tage)",
-            "helpText": "Tage zur Anzeige des 'Neu in diesem Jahr' Indikators (1-365)"
-          }
-        },
-        "seasonal": {
-          "title": "Saisonale Verfolgung",
-          "description": "Verfolgen Sie die ersten Ankünfte von Arten jede Saison",
-          "enabled": {
-            "label": "Saisonale Verfolgung aktivieren",
-            "helpText": "Verfolgen und benachrichtigen Sie, wenn eine Art zum ersten Mal in der Saison erkannt wird"
-          },
-          "windowDays": {
-            "label": "Fenster (Tage)",
-            "helpText": "Tage zur Anzeige des 'Neu in dieser Saison' Indikators (1-365)"
-          },
-          "seasons": {
-            "title": "Saisondefinitionen",
-            "description": "Definieren Sie, wann jede Saison beginnt. Die Saisons werden automatisch basierend auf dem Breitengrad Ihres Standorts angepasst.",
-            "spring": "Frühling",
-            "summer": "Sommer",
-            "fall": "Herbst",
-            "winter": "Winter",
-            "wet1": "Regenzeit 1",
-            "dry1": "Trockenzeit 1",
-            "wet2": "Regenzeit 2",
-            "dry2": "Trockenzeit 2",
-            "startMonth": "Startmonat",
-            "startDay": "Starttag",
-            "hemisphereNote": "Die Saisondaten werden automatisch basierend auf Ihrem Breitengrad konfiguriert. Die nördliche Hemisphäre verwendet Standardsaisons, die südliche Hemisphäre hat verschobene Daten und Äquatorialregionen verwenden Regen-/Trockenzeiten."
-          }
-        },
-        "months": {
-          "january": "Januar",
-          "february": "Februar",
-          "march": "März",
-          "april": "April",
-          "may": "Mai",
-          "june": "Juni",
-          "july": "Juli",
-          "august": "August",
-          "september": "September",
-          "october": "Oktober",
-          "november": "November",
-          "december": "Dezember"
-        },
-        "units": {
-          "days": "Tage",
-          "min": "Min",
-          "hours": "Std"
-        }
-      },
-      "dynamicThreshold": {
-        "tabLabel": "Gelernt",
-        "title": "Gelernte Schwellenwerte",
-        "description": "Diese Seite zeigt dynamische Schwellenwert-Laufzeitdaten. Wenn in Haupteinstellungen → Erkennung aktiviert, werden Schwellenwerte automatisch durch mehrere hochkonfidente Erkennungen angepasst. Hier gezeigte Arten werden an diesem Standort als vorhanden angenommen.",
-        "stats": {
-          "active": "Aktiv",
-          "atMinimum": "Am Minimum",
-          "minThreshold": "Min. Schwellenwert",
-          "validityPeriod": "Gültigkeitsdauer"
-        },
-        "header": {
-          "species": "Art",
-          "threshold": "Schwellenwert",
-          "expires": "Läuft ab"
-        },
-        "searchPlaceholder": "Arten suchen...",
-        "threshold": "Schwellenwert",
-        "level": "Stufe",
-        "expires": "Läuft ab",
-        "expired": "Abgelaufen",
-        "confidence": "Konfidenz",
-        "requiredConfidence": "Erforderliche Konfidenz",
-        "resetAll": "Alle zurücksetzen",
-        "resetSpecies": "Schwellenwert für diese Art zurücksetzen",
-        "noEvents": "Keine Schwellenwertänderungen",
-        "changeReason": {
-          "highConfidence": "Erkennung mit hoher Konfidenz",
-          "expiry": "Schwellenwert abgelaufen",
-          "manualReset": "Manueller Reset"
-        },
-        "note": "Hochkonfidente Erkennungen bestätigen, welche Arten an diesem Standort vorkommen. Nach mehreren hochkonfidenten Übereinstimmungen wird der Erkennungsschwellenwert sicher gesenkt, um mehr Rufe ohne signifikantes Falsch-Positiv-Risiko zu erfassen. Schwellenwerte werden nach der konfigurierten Gültigkeitsdauer automatisch zurückgesetzt.",
-        "empty": {
-          "title": "Keine gelernten Schwellenwerte",
-          "description": "Hochkonfidente Erkennungen erstellen automatisch gelernte Schwellenwerte für Arten"
-        },
-        "resetAllConfirm": {
-          "title": "Alle Schwellenwerte zurücksetzen",
-          "message": "Dies setzt alle {count} gelernten Schwellenwerte zurück. Arten müssen erneut mit hoher Konfidenz erkannt werden, um ihre Schwellenwerte zu senken."
-        },
-        "loadError": "Fehler beim Laden der dynamischen Schwellenwerte",
-        "resetSuccess": "Schwellenwert für {species} zurückgesetzt",
-        "resetError": "Fehler beim Zurücksetzen des Schwellenwerts",
-        "resetAllSuccess": "{count} Schwellenwerte zurückgesetzt",
-        "resetAllError": "Fehler beim Zurücksetzen der Schwellenwerte",
-        "expand": "Ereignisverlauf anzeigen",
-        "collapse": "Ereignisverlauf ausblenden"
-      },
-      "suggestions": "Artvorschläge"
     },
     "security": {
       "pageLabel": "Sicherheitseinstellungen",
@@ -3415,6 +3244,7 @@
       "baseUrlHelp": "Vollständige externe URL für Reverse-Proxy-Setups. Wenn gesetzt, wird diese URL unverändert für Benachrichtigungen und OAuth-Weiterleitungen verwendet, wobei Host- und AutoTLS-Einstellungen ignoriert werden.",
       "baseUrlValidation": "Bitte geben Sie eine gültige URL ein, die mit http:// oder https:// beginnt und einen Hostnamen enthält",
       "hostLabel": "Host-Adresse",
+      "hostHelp": "Der öffentliche Hostname oder die IP-Adresse Ihres Servers (z.B. birdnet.example.com). Erforderlich für OAuth-Anmeldung und TLS-Zertifikate. Bei Einsatz eines Reverse-Proxy verwenden Sie stattdessen die Base URL.",
       "allowSubnetBypassLabel": "Zugriff aus Subnetz zur Umgehung der Authentifizierung erlauben",
       "allowedSubnetsLabel": "Erlaubte Subnetze",
       "allowedSubnetsHelp": "Erlaubte Netzwerkbereiche zur Umgehung der Anmeldung (CIDR-Notation, kommagetrennte Liste)",
@@ -3439,9 +3269,9 @@
         "title": "Basis-Authentifizierung",
         "description": "Sicherer Zugriff mit einem einfachen Passwort",
         "enableLabel": "Passwort-Authentifizierung aktivieren",
+        "disabled": "Passwort-Authentifizierung ist deaktiviert",
         "passwordLabel": "Passwort",
-        "passwordHelpText": "Zugriff auf Einstellungen mit einem Passwort begrenzen.",
-        "disabled": "Passwort-Authentifizierung ist deaktiviert"
+        "passwordHelpText": "Zugriff auf Einstellungen mit einem Passwort begrenzen."
       },
       "oauth": {
         "title": "Externe Authentifizierung",
@@ -3462,6 +3292,9 @@
           "deleteButton": "Anbieter löschen",
           "deleteConfirm": "Möchten Sie den {provider}-OAuth-Anbieter wirklich löschen?"
         },
+        "hostRequiredWarning": "Hostadresse oder Base URL ist nicht konfiguriert",
+        "hostRequiredWarningDescription": "OAuth-Anmeldung erfordert, dass eine Hostadresse oder Base URL im Tab Serverkonfiguration festgelegt ist. Ohne diese können OAuth-Anbieter keine Callback-URLs erstellen und die Anmeldung schlägt fehl.",
+        "redirectUriNotConfigured": "Nicht konfiguriert - Hostadresse oder Base URL im Tab Serverkonfiguration festlegen",
         "noProviders": "Keine OAuth-Anbieter konfiguriert",
         "noProvidersDescription": "Fügen Sie einen Anbieter hinzu, um die Anmeldung mit Google, GitHub, Microsoft, LINE, Kakao oder einem benutzerdefinierten OIDC-Anbieter zu ermöglichen.",
         "enableProviderLabel": "Diesen Anbieter aktivieren",
@@ -3638,16 +3471,326 @@
         "fileReadError": "Ausgewählte Datei konnte nicht gelesen werden"
       }
     },
+    "species": {
+      "pageLabel": "Arteneinstellungen",
+      "saveError": "Konfiguration für \"{species}\" konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+      "configUpdated": "Konfiguration für \"{species}\" aktualisiert",
+      "configAdded": "Konfiguration für \"{species}\" hinzugefügt",
+      "duplicateConfigError": "Art \"{species}\" hat bereits eine Konfiguration. Bitte wählen Sie einen anderen Namen.",
+      "activeSpecies": {
+        "title": "Aktive Arten",
+        "tabLabel": "Aktiv",
+        "description": "Arten, die basierend auf Ihrem aktuellen Standort und Filtereinstellungen erkannt werden",
+        "stats": {
+          "species": "Arten",
+          "location": "Standort",
+          "threshold": "Schwellenwert",
+          "updated": "Aktualisiert",
+          "justNow": "Gerade eben",
+          "minutesAgo": "vor {count}m",
+          "hoursAgo": "vor {count}h"
+        },
+        "search": {
+          "placeholder": "Arten suchen..."
+        },
+        "badges": {
+          "included": "Eingeschlossen",
+          "configured": "Konfiguriert"
+        },
+        "empty": {
+          "title": "Keine Arten gefunden",
+          "description": "Konfigurieren Sie Ihren Standort in den Haupteinstellungen, um verfügbare Arten zu sehen"
+        },
+        "noResults": "Keine Arten entsprechen Ihrer Suche",
+        "infoNote": "Diese Liste basiert auf Ihrem Standort und dem Bereichsfilter-Schwellenwert. Manuell hinzugefügte Arten werden immer eingeschlossen.",
+        "retry": "Erneut versuchen",
+        "expand": "Liste erweitern",
+        "collapse": "Liste reduzieren",
+        "downloadCsv": "CSV herunterladen",
+        "errors": {
+          "loadFailed": "Fehler beim Laden der aktiven Artenliste"
+        },
+        "locationNotConfigured": {
+          "title": "Standort nicht konfiguriert",
+          "description": "Legen Sie Ihren Standort in den Haupteinstellungen fest, um Arten in Ihrer Umgebung zu sehen. Der Bereichsfilter verwendet Ihren Standort, um zu bestimmen, welche Arten in der Nähe wahrscheinlich vorkommen.",
+          "action": "Standort konfigurieren"
+        },
+        "columns": {
+          "commonName": "Name",
+          "scientificName": "Wissenschaftlicher Name",
+          "score": "Bewertung",
+          "status": "Status"
+        }
+      },
+      "alwaysInclude": {
+        "title": "Immer Arten einschließen",
+        "tabLabel": "Einschl.",
+        "description": "Arten in dieser Liste werden immer im Bereich der erkannten Arten enthalten sein",
+        "noSpeciesMessage": "Keine Arten zur Einschlussliste hinzugefügt"
+      },
+      "alwaysExclude": {
+        "title": "Immer Arten ausschließen",
+        "tabLabel": "Ausschl.",
+        "description": "Arten in dieser Liste werden immer von der Erkennung ausgeschlossen",
+        "noSpeciesMessage": "Keine Arten zur Ausschlussliste hinzugefügt"
+      },
+      "customConfiguration": {
+        "title": "Benutzerdefinierte Artenkonfiguration",
+        "tabLabel": "Benutzer.",
+        "description": "Artenspezifische Schwellenwerte, Erkennungsintervalle und Aktionen",
+        "helpText": {
+          "intro": "Konfigurieren Sie artenspezifische Einstellungen:",
+          "threshold": "Schwellenwert: Minimaler Konfidenzwert (0-1) für die Erkennung erforderlich",
+          "interval": "Intervall: Mindestzeit in Sekunden zwischen Erkennungen derselben Art (0 = globalen Standardwert verwenden)",
+          "actions": "Aktionen: Benutzerdefinierte Befehle, die ausgeführt werden, wenn diese Art erkannt wird"
+        },
+        "columnHeaders": {
+          "species": "Art",
+          "settings": "Einstellungen",
+          "actions": "Aktionen"
+        },
+        "badges": {
+          "threshold": "Schwellenwert: {value}",
+          "interval": "Intervall: {value}s",
+          "customAction": "Benutzerdefinierte Aktion",
+          "executeDefaults": "+Standards"
+        },
+        "dropdown": {
+          "editConfig": "Konfiguration bearbeiten",
+          "addAction": "Aktion hinzufügen",
+          "remove": "Entfernen"
+        },
+        "labels": {
+          "threshold": "Schwellenwert",
+          "interval": "Intervall",
+          "intervalSeconds": "Intervall (Sek.)",
+          "addButton": "Hinzufügen"
+        },
+        "noConfigurationsMessage": "Keine benutzerdefinierten Artenkonfigurationen hinzugefügt",
+        "addForm": {
+          "speciesPlaceholder": "Artname",
+          "thresholdPlaceholder": "0,5",
+          "intervalPlaceholder": "0"
+        },
+        "addConfiguration": "Konfiguration hinzufügen",
+        "newConfiguration": "Neue Konfiguration",
+        "editing": "Bearbeiten: {species}",
+        "configuredCount": "{count} konfiguriert",
+        "searchPlaceholder": "Zum Suchen eingeben...",
+        "saving": "Speichern...",
+        "save": "Speichern",
+        "cancel": "Abbrechen",
+        "configureActions": "Aktionen konfigurieren",
+        "actionsConfigured": "Konfiguriert",
+        "list": {
+          "threshold": "Schwellenwert:",
+          "interval": "Intervall:",
+          "intervalNone": "Keines",
+          "actionBadge": "Aktion",
+          "editTitle": "Konfiguration bearbeiten",
+          "removeTitle": "Konfiguration entfernen"
+        },
+        "emptyState": {
+          "title": "Noch keine Konfigurationen.",
+          "description": "Klicken Sie auf \"Konfiguration hinzufügen\", um die Artenerkennungseinstellungen anzupassen."
+        }
+      },
+      "synonyms": {
+        "tabLabel": "Synonyme",
+        "description": "Ordnen Sie wissenschaftliche BirdNET-Namen ihren aktualisierten Entsprechungen in einer neueren Taxonomie zu. Wird nur als Fallback beim Abrufen von Vogelbildern von Wikipedia und AviCommons verwendet; benennt Arten weder in Erkennungen noch im Dashboard um.",
+        "helpText": "Um den in der Oberfläche angezeigten Namen einer Art zu ändern, bearbeiten Sie Ihre BirdNET-Labeldatei (Einstellung \"Label-Pfad\" unter Haupteinstellungen).",
+        "birdnetName": "BirdNET-Name",
+        "updatedName": "Aktualisierter wissenschaftlicher Name",
+        "addButton": "Synonym hinzufügen",
+        "emptyState": "Keine Taxonomie-Synonyme konfiguriert",
+        "errors": {
+          "unknownSpecies": "Art nicht in BirdNET-Labels gefunden",
+          "duplicateKey": "Für diese Art existiert bereits ein Synonym",
+          "emptyUpdatedName": "Der neue Name ist erforderlich"
+        }
+      },
+      "actionsModal": {
+        "title": "Aktionen für {species}",
+        "actionType": {
+          "label": "Aktionstyp",
+          "executeCommand": "Befehl ausführen",
+          "onlySupported": "Derzeit werden nur Befehl ausführen-Aktionen unterstützt"
+        },
+        "command": {
+          "label": "Befehl",
+          "helpText": "Geben Sie den vollständigen Pfad zum Befehl oder Skript an, das Sie ausführen möchten"
+        },
+        "parameters": {
+          "label": "Parameter",
+          "helpText": "Diese Werte werden in der aufgeführten Reihenfolge an Ihren Befehl übergeben",
+          "placeholder": "Klicken Sie auf die Schaltflächen unten, um Parameter hinzuzufügen, oder geben Sie sie manuell ein",
+          "tooltip": "Verwenden Sie die Schaltflächen unten oder geben Sie direkt ein (kommagetrennt)",
+          "availableTitle": "Verfügbare Parameter",
+          "buttons": {
+            "commonName": "DeutscherName",
+            "scientificName": "WissenschaftlicherName",
+            "confidence": "Konfidenz",
+            "time": "Zeit",
+            "source": "Quelle",
+            "clearParameters": "Parameter löschen"
+          }
+        },
+        "executeDefaults": {
+          "label": "Auch Standardaktionen ausführen (Datenbankspeicherung, Benachrichtigungen usw.)",
+          "helpText": "Wenn aktiviert, werden sowohl Ihre benutzerdefinierte Aktion als auch die Standardaktionen des Systems ausgeführt. Wenn deaktiviert, wird nur Ihre benutzerdefinierte Aktion ausgeführt."
+        }
+      },
+      "add": "Hinzufügen",
+      "remove": "Entfernen",
+      "suggestions": "Artvorschläge",
+      "addSpeciesToInclude": "Arten zum Einschließen hinzufügen",
+      "addSpeciesToIncludeLabel": "Neue Arten zum Einschließen hinzufügen",
+      "addSpeciesToExclude": "Arten zum Ausschließen hinzufügen",
+      "addSpeciesToExcludeLabel": "Neue Arten zum Ausschließen hinzufügen",
+      "commandPathPlaceholder": "/pfad/zu/ihrem/befehl",
+      "parametersPlaceholder": "Parameter werden hier angezeigt",
+      "errors": {
+        "speciesLoadFailed": "Fehler beim Laden der Artenliste. Bitte versuchen Sie es erneut."
+      },
+      "tracking": {
+        "title": "Verfolgung",
+        "tabLabel": "Verfolgung",
+        "description": "Konfigurieren Sie die Verfolgung neuer Artenerkennungen basierend auf Zeiträumen",
+        "enabled": {
+          "label": "Artenverfolgung aktivieren",
+          "helpText": "Bei Aktivierung verfolgt das System neue Artenerkennungen und kann Benachrichtigungen senden"
+        },
+        "newSpeciesWindowDays": {
+          "label": "Neue Art Fenster (Tage)",
+          "helpText": "Anzahl der Tage, die eine Art nach der Erstentdeckung als 'neu' gilt (1-365)"
+        },
+        "syncIntervalMinutes": {
+          "label": "Synchronisierungsintervall (Minuten)",
+          "helpText": "Wie oft Verfolgungsdaten mit der Datenbank synchronisiert werden (1-1440)"
+        },
+        "notificationSuppressionHours": {
+          "label": "Benachrichtigungsunterdrückung (Stunden)",
+          "helpText": "Stunden zur Unterdrückung doppelter Benachrichtigungen für dieselbe Art (0-8760)"
+        },
+        "yearly": {
+          "title": "Jährliche Verfolgung",
+          "description": "Verfolgen Sie die ersten Ankünfte von Arten jedes Jahr",
+          "enabled": {
+            "label": "Jährliche Verfolgung aktivieren",
+            "helpText": "Verfolgen und benachrichtigen Sie, wenn eine Art zum ersten Mal im Jahr erkannt wird"
+          },
+          "resetMonth": {
+            "label": "Rücksetzungsmonat",
+            "helpText": "Monat, in dem die jährliche Verfolgung zurückgesetzt wird (1-12)"
+          },
+          "resetDay": {
+            "label": "Rücksetzungstag",
+            "helpText": "Tag des Monats, an dem die jährliche Verfolgung zurückgesetzt wird"
+          },
+          "windowDays": {
+            "label": "Fenster (Tage)",
+            "helpText": "Tage zur Anzeige des 'Neu in diesem Jahr' Indikators (1-365)"
+          }
+        },
+        "seasonal": {
+          "title": "Saisonale Verfolgung",
+          "description": "Verfolgen Sie die ersten Ankünfte von Arten jede Saison",
+          "enabled": {
+            "label": "Saisonale Verfolgung aktivieren",
+            "helpText": "Verfolgen und benachrichtigen Sie, wenn eine Art zum ersten Mal in der Saison erkannt wird"
+          },
+          "windowDays": {
+            "label": "Fenster (Tage)",
+            "helpText": "Tage zur Anzeige des 'Neu in dieser Saison' Indikators (1-365)"
+          },
+          "seasons": {
+            "title": "Saisondefinitionen",
+            "description": "Definieren Sie, wann jede Saison beginnt. Die Saisons werden automatisch basierend auf dem Breitengrad Ihres Standorts angepasst.",
+            "spring": "Frühling",
+            "summer": "Sommer",
+            "fall": "Herbst",
+            "winter": "Winter",
+            "wet1": "Regenzeit 1",
+            "dry1": "Trockenzeit 1",
+            "wet2": "Regenzeit 2",
+            "dry2": "Trockenzeit 2",
+            "startMonth": "Startmonat",
+            "startDay": "Starttag",
+            "hemisphereNote": "Die Saisondaten werden automatisch basierend auf Ihrem Breitengrad konfiguriert. Die nördliche Hemisphäre verwendet Standardsaisons, die südliche Hemisphäre hat verschobene Daten und Äquatorialregionen verwenden Regen-/Trockenzeiten."
+          }
+        },
+        "months": {
+          "january": "Januar",
+          "february": "Februar",
+          "march": "März",
+          "april": "April",
+          "may": "Mai",
+          "june": "Juni",
+          "july": "Juli",
+          "august": "August",
+          "september": "September",
+          "october": "Oktober",
+          "november": "November",
+          "december": "Dezember"
+        },
+        "units": {
+          "days": "Tage",
+          "min": "Min",
+          "hours": "Std"
+        }
+      },
+      "dynamicThreshold": {
+        "tabLabel": "Gelernt",
+        "title": "Gelernte Schwellenwerte",
+        "description": "Diese Seite zeigt dynamische Schwellenwert-Laufzeitdaten. Wenn in Haupteinstellungen → Erkennung aktiviert, werden Schwellenwerte automatisch durch mehrere hochkonfidente Erkennungen angepasst. Hier gezeigte Arten werden an diesem Standort als vorhanden angenommen.",
+        "stats": {
+          "active": "Aktiv",
+          "atMinimum": "Am Minimum",
+          "minThreshold": "Min. Schwellenwert",
+          "validityPeriod": "Gültigkeitsdauer"
+        },
+        "header": {
+          "species": "Art",
+          "threshold": "Schwellenwert",
+          "expires": "Läuft ab"
+        },
+        "searchPlaceholder": "Arten suchen...",
+        "threshold": "Schwellenwert",
+        "level": "Stufe",
+        "expires": "Läuft ab",
+        "expired": "Abgelaufen",
+        "confidence": "Konfidenz",
+        "requiredConfidence": "Erforderliche Konfidenz",
+        "resetAll": "Alle zurücksetzen",
+        "resetSpecies": "Schwellenwert für diese Art zurücksetzen",
+        "noEvents": "Keine Schwellenwertänderungen",
+        "changeReason": {
+          "highConfidence": "Erkennung mit hoher Konfidenz",
+          "expiry": "Schwellenwert abgelaufen",
+          "manualReset": "Manueller Reset"
+        },
+        "note": "Hochkonfidente Erkennungen bestätigen, welche Arten an diesem Standort vorkommen. Nach mehreren hochkonfidenten Übereinstimmungen wird der Erkennungsschwellenwert sicher gesenkt, um mehr Rufe ohne signifikantes Falsch-Positiv-Risiko zu erfassen. Schwellenwerte werden nach der konfigurierten Gültigkeitsdauer automatisch zurückgesetzt.",
+        "empty": {
+          "title": "Keine gelernten Schwellenwerte",
+          "description": "Hochkonfidente Erkennungen erstellen automatisch gelernte Schwellenwerte für Arten"
+        },
+        "resetAllConfirm": {
+          "title": "Alle Schwellenwerte zurücksetzen",
+          "message": "Dies setzt alle {count} gelernten Schwellenwerte zurück. Arten müssen erneut mit hoher Konfidenz erkannt werden, um ihre Schwellenwerte zu senken."
+        },
+        "loadError": "Fehler beim Laden der dynamischen Schwellenwerte",
+        "resetSuccess": "Schwellenwert für {species} zurückgesetzt",
+        "resetError": "Fehler beim Zurücksetzen des Schwellenwerts",
+        "resetAllSuccess": "{count} Schwellenwerte zurückgesetzt",
+        "resetAllError": "Fehler beim Zurücksetzen der Schwellenwerte",
+        "expand": "Ereignisverlauf anzeigen",
+        "collapse": "Ereignisverlauf ausblenden"
+      }
+    },
     "database": {
       "sqlitePlaceholder": "SQLite-Datenbankpfad eingeben",
       "mysqlHostPlaceholder": "MySQL-Host eingeben",
       "mysqlUsernamePlaceholder": "MySQL-Benutzernamen eingeben"
-    },
-    "tabs": {
-      "navigation": "Navigationsreiter der Einstellungen",
-      "hasChanges": "Dieser Reiter hat ungespeicherte Änderungen",
-      "setAsDefault": "Als Standard festlegen",
-      "defaultIndicator": "Standard-Eingabequelle"
     },
     "alerts": {
       "sections": {
@@ -3794,6 +3937,8 @@
           "species_name": "Artname",
           "scientific_name": "Wissenschaftlicher Name",
           "confidence": "Konfidenz",
+          "days_since_last_seen": "Tage seit letzter Sichtung",
+          "novelty_episode_days": "Tage der Neuheitsepisode",
           "location": "Standort",
           "stream_name": "Stream-Name",
           "stream_url": "Stream-URL",
@@ -3804,6 +3949,8 @@
         "operators": {
           "is": "ist",
           "is_not": "ist nicht",
+          "in": "ist in der Liste",
+          "not_in": "ist nicht in der Liste",
           "contains": "enthält",
           "not_contains": "enthält nicht",
           "greater_than": "größer als",
@@ -3857,12 +4004,6 @@
         }
       }
     },
-    "errors": {
-      "loadFailed": "Einstellungen konnten nicht geladen werden",
-      "saveFailed": "Einstellungen konnten nicht gespeichert werden",
-      "databaseStatsFailed": "Datenbankstatistiken konnten nicht geladen werden",
-      "csvDownloadFailed": "CSV-Download fehlgeschlagen"
-    },
     "appearance": {
       "colorScheme": "Farbschema",
       "colorSchemeDescription": "Wählen Sie ein Farbschema für die Oberfläche",
@@ -3870,7 +4011,7 @@
       "schemeForest": "Wald",
       "schemeAmber": "Bernstein",
       "schemeViolet": "Violett",
-      "schemeRose": "Rose",
+      "schemeRose": "Rosé",
       "schemeCustom": "Benutzerdefiniert",
       "customPrimary": "Primärfarbe",
       "customAccent": "Akzentfarbe",
@@ -4074,7 +4215,31 @@
       "playbackSpeed": "Wiedergabegeschwindigkeit",
       "speed": "Tempo",
       "loop": "Wiederholung umschalten",
-      "player": "Audioplayer"
+      "player": "Audioplayer",
+      "autoplayBlocked": "Klicken zum Abspielen (Autoplay blockiert)",
+      "hlsNotSupported": "HLS-Wiedergabe wird in diesem Browser nicht unterstützt",
+      "streamStarting": "Audiostream wird gestartet...",
+      "levelFor": "Audiopegel für {source}",
+      "levelForNoSource": "Audiopegel: keine Quelle",
+      "noSource": "Keine Quelle",
+      "levelAnnouncement": "Aktueller Audiopegel: {level} Prozent",
+      "levelAnnouncementClipping": "Aktueller Audiopegel: {level} Prozent, Übersteuerung erkannt",
+      "sourceSelection": "Audioquelle auswählen",
+      "sources": "Audioquellen",
+      "noSourcesAvailable": "Keine Audioquellen verfügbar",
+      "silent": "(still)",
+      "stopPlayback": "Audiowiedergabe stoppen",
+      "startPlayback": "Audiowiedergabe starten",
+      "nowPlaying": "Spielt jetzt Audio von {source}",
+      "nowPlayingNoSource": "Audio wird wiedergegeben",
+      "playbackStopped": "Audiowiedergabe gestoppt",
+      "loginRequired": "Anmeldung für Audio-Streaming erforderlich",
+      "streamError": "Fehler beim Starten des Streams",
+      "streamTitle": "Vogelaudio-Stream - {source}",
+      "streamTitleDefault": "Vogelaudio-Stream",
+      "streamArtist": "BirdNET-Go",
+      "streamAlbum": "Livestream",
+      "playbackError": "Wiedergabefehler: {details}"
     },
     "spectrogram": {
       "notGenerated": "Spektrogramm noch nicht generiert",
@@ -4216,30 +4381,6 @@
       "download": "Herunterladen"
     }
   },
-  "terminal": {
-    "title": "Terminal",
-    "disabled": "Terminal ist deaktiviert",
-    "disabledDescription": "Das Browser-Terminal ist deaktiviert. Aktivieren Sie es unter Einstellungen → Sicherheit, um diese Funktion zu nutzen.",
-    "connected": "Verbunden",
-    "disconnected": "Getrennt",
-    "connecting": "Verbinde...",
-    "connectionError": "Verbindung fehlgeschlagen",
-    "connectionClosed": "Verbindung getrennt",
-    "securityWarning": "Warnung: Dieses Terminal bietet direkten Shell-Zugang zum Host-System. Nur in vertrauenswürdigen Netzwerken aktivieren.",
-    "copySelection": "Auswahl kopieren",
-    "expand": "Erweitern",
-    "collapse": "Reduzieren",
-    "fullscreen": "Vollbild",
-    "exitFullscreen": "Vollbild verlassen",
-    "colorTheme": "Farbschema",
-    "themeDark": "Dunkel",
-    "themeLight": "Hell",
-    "themeHighContrast": "Hoher Kontrast",
-    "detach": "In neuem Fenster öffnen",
-    "detached": "Terminal ist abgetrennt",
-    "detachedDescription": "Das Terminal läuft in einem separaten Fenster. Schließen Sie dieses Fenster, um es hierher zurückzuholen.",
-    "reattach": "Wieder anhängen"
-  },
   "quietHours": {
     "indicator": {
       "tooltip": "Ruhemodus aktiv — {count} Quelle(n) pausiert"
@@ -4323,6 +4464,16 @@
       "hostRequired": "Host-Parameter ist erforderlich",
       "invalidHost": "Ungültiger Host-Parameter",
       "rateLimit": "Zu viele Verbindungsversuche zum Benachrichtigungsstream, bitte warten Sie einen Moment"
+    },
+    "streams": {
+      "test": {
+        "invalidBody": "Ungültiger Anfragekörper",
+        "urlRequired": "Stream-URL ist erforderlich",
+        "invalidUrl": "Ungültiges URL-Format. Geben Sie eine vollständige URL ein, z. B. rtsp://host:port/pfad",
+        "unsupportedScheme": "Nicht unterstütztes URL-Schema \"{scheme}\". Verwenden Sie rtsp, rtsps, http, https, rtmp oder udp",
+        "blockedDestination": "Dieses Ziel ist aus Sicherheitsgründen gesperrt",
+        "connectionFailed": "Verbindung zum Stream konnte nicht hergestellt werden. Überprüfen Sie, ob die URL korrekt ist und der Stream erreichbar ist"
+      }
     },
     "debug": {
       "notEnabled": "Debug-Modus nicht aktiviert"
@@ -4457,6 +4608,154 @@
       }
     }
   },
+  "analysis": {
+    "title": "Analyse",
+    "tabs": {
+      "settings": "Einstellungen",
+      "models": "Modelle"
+    },
+    "detection": {
+      "title": "Erkennungseinstellungen",
+      "description": "Konfidenz-Schwellenwerte für die Artenklassifizierung konfigurieren.",
+      "confidenceThreshold": {
+        "label": "Konfidenz-Schwellenwert",
+        "helpText": "Mindest-Konfidenzwert (0.0 - 1.0), ab dem eine Erkennung aufgezeichnet wird."
+      },
+      "batThreshold": {
+        "label": "Fledermaus-Erkennungsschwelle",
+        "helpText": "Minimale Konfidenzbewertung für Fledermausarten-Erkennungen. Gilt nur für Fledermaus-Klassifikatormodelle."
+      },
+      "batFilter": {
+        "label": "Fledermaus-Audio-Hochpassfilter",
+        "helpText": "Filtert hörbare Frequenzen vor der Fledermausanalyse heraus, um Fehlerkennungen durch Vogelgesang und Umgebungsgeräusche zu reduzieren."
+      },
+      "batNighttimeOnly": {
+        "label": "Nur nachts",
+        "helpText": "Wenn aktiviert, wird die Fledermauserkennung nur zwischen der bürgerlichen Abenddämmerung und der Morgendämmerung durchgeführt. Erfordert eine konfigurierte Standorteinstellung. Deaktivieren, um die Fledermauserkennung rund um die Uhr auszuführen."
+      },
+      "batUltrasonicFilter": {
+        "label": "Nachträgliche Validierung",
+        "helpText": "Wenn aktiviert, werden Fledermauserkennungen durch Analyse der Ultraschall-Energiemuster in der Quellaufnahme validiert. Erkennungen ohne typische Echoortungsmerkmale werden als unwahrscheinlich markiert."
+      },
+      "batFalsePositiveFilter": {
+        "label": "Fledermaus-Falsch-Positiv-Filter",
+        "helpText": "Erfordert mehrere Bestätigungen einer Fledermauserkennung innerhalb eines gleitenden Fensters, bevor sie akzeptiert wird. Höhere Stufen erfordern mehr Bestätigungen und reduzieren Fehlerkennungen. Das Fledermausmodell verwendet eine feste 50%-Überlappung, daher ist keine Überlappungsanpassung erforderlich.",
+        "levels": {
+          "off": "Keine Filterung; akzeptiert jede Fledermauserkennung sofort.",
+          "moderate": "Gute Balance für die meisten Setups. Reduziert Fehlerkennungen erheblich.",
+          "strict": "Maximale Filterung für höchste Genauigkeit."
+        },
+        "detectionCount": "{count} Bestätigungen erforderlich. {description}",
+        "warningOff": "Ohne Filterung besteht eine hohe Wahrscheinlichkeit für Fehlerkennungen. Die Aktivierung der Filterung verbessert die Genauigkeit erheblich."
+      },
+      "locale": {
+        "label": "Artensprache",
+        "helpText": "Sprache für die gebräuchlichen Artnamen in der Benutzeroberfläche."
+      }
+    },
+    "rangeFilter": {
+      "birdOnlyNote": "Der Reichweitenfilter gilt nur für Vogelklassifikatoren. Fledermausmodelle verwenden eigene Artenlisten.",
+      "status": {
+        "title": "Gebietsfilter-Übersicht",
+        "geomodelInfo": "BirdNET-Geomodell {version} - {species} bekannte Arten",
+        "autoSelected": "Automatisch ausgewählt",
+        "manual": "Manuell",
+        "classifier": "Klassifikator",
+        "totalSpecies": "Arten insgesamt",
+        "withRangeData": "Mit Gebietsdaten",
+        "withoutRangeData": "Ohne Gebietsdaten",
+        "withRangeDataTooltip": "Arten, die das Geomodell anhand der geografischen Wahrscheinlichkeit an Ihrem Standort bewerten kann",
+        "withoutRangeDataTooltip": "Arten ohne geografische Daten im Geomodell, behandelt durch die Einstellung für nicht zugeordnete Arten unten",
+        "noFilter": "Kein Gebietsfilter aktiv",
+        "passUnmapped": {
+          "label": "Arten ohne Gebietsdaten zulassen",
+          "helpText": "Erkennungen von Arten zulassen, für die das Geomodell keine geografischen Daten hat. Wenn deaktiviert, werden diese Arten immer herausgefiltert."
+        }
+      }
+    },
+    "advanced": {
+      "title": "Erweitert",
+      "description": "Verarbeitungs- und benutzerdefinierte Modellkonfiguration."
+    },
+    "gallery": {
+      "title": "Modellgalerie",
+      "description": "Klassifikatormodelle für Vogel- und Fledermauserkennungen verwalten.",
+      "tabs": {
+        "installed": "Installiert",
+        "available": "Verfügbar"
+      },
+      "loading": "Modelle werden geladen...",
+      "retry": "Wiederholen",
+      "builtIn": "Integriert",
+      "builtInDescription": "Integrierter Vogelartenklassifikator des BirdNET-Teams.",
+      "species": "{count} Arten",
+      "install": "Installieren",
+      "installing": "Wird installiert...",
+      "remove": "Entfernen",
+      "removing": "Wird entfernt...",
+      "noInstalledModels": "Keine zusätzlichen Modelle installiert. Durchsuchen Sie den Tab Verfügbar, um weitere Klassifikatoren hinzuzufügen.",
+      "noAvailableModels": "Keine zusätzlichen Modelle für Ihre Plattform verfügbar.",
+      "sections": {
+        "acoustic": "Akustische Klassifikatoren",
+        "geomodel": "Geomodelle"
+      },
+      "categories": {
+        "wildlife": "Wildtierklassifikatoren",
+        "bird": "Vogelklassifikatoren",
+        "bat": "Fledermausklassifikatoren"
+      },
+      "progress": {
+        "downloading": "Wird heruntergeladen...",
+        "verifying": "Wird überprüft...",
+        "loading": "Wird geladen...",
+        "complete": "Erfolgreich installiert",
+        "failed": "Fehlgeschlagen"
+      },
+      "license": {
+        "title": "Lizenzvereinbarung",
+        "model": "Modell",
+        "author": "Autor",
+        "license": "Lizenz",
+        "commercialUse": "Kommerzielle Nutzung",
+        "downloadSize": "Downloadgröße",
+        "allowed": "Erlaubt",
+        "notAllowed": "Nicht erlaubt",
+        "commercialUseAllowed": "Kommerzielle Nutzung erlaubt",
+        "nonCommercialOnly": "Nur nichtkommerzielle Nutzung",
+        "nonCommercialWarning": "Dieses Modell ist nur für nichtkommerzielle Nutzung lizenziert. Mit der Installation stimmen Sie den Lizenzbedingungen zu.",
+        "acceptAndInstall": "Akzeptieren & Installieren"
+      },
+      "removeDialog": {
+        "title": "{name} entfernen?",
+        "confirmation": "Die Modelldateien werden von der Festplatte entfernt. Labeldaten bestehender Erkennungen bleiben erhalten."
+      },
+      "errors": {
+        "catalogLoadFailed": "Modellkatalog konnte nicht geladen werden",
+        "installFailed": "Modellinstallation konnte nicht gestartet werden",
+        "removeFailed": "Modell konnte nicht entfernt werden"
+      },
+      "regionLabel": "Region",
+      "speciesLabel": "Arten",
+      "reinstall": "Neu installieren",
+      "reinstalling": "Wird neu installiert...",
+      "reinstallComplete": "Dateien erfolgreich überprüft",
+      "geomodelBadge": "Enthält BirdNET v3.0 Geomodell",
+      "onnxRuntimeRequired": "Erfordert ONNX Runtime, das auf diesem System nicht verfügbar ist.",
+      "onnxRuntimeMissing": "ONNX Runtime ist nicht verfügbar. Dieses Modell kann nicht ausgeführt werden.",
+      "unavailable": "Nicht verfügbar"
+    },
+    "bird": {
+      "title": "Vogelerkennung",
+      "description": "Konfigurieren Sie Konfidenzschwelle, Artensprache und Falsch-Positiv-Filterung für Vogelklassifikatoren."
+    },
+    "bat": {
+      "title": "Fledermauserkennung",
+      "description": "Konfigurieren Sie Schwellenwert, Zeitplanung und Falsch-Positiv-Filterung für Fledermausklassifikatoren."
+    },
+    "dynamicThreshold": {
+      "birdOnlyNote": "Der dynamische Schwellenwert gilt nur für Vogelklassifikatoren."
+    }
+  },
   "restart": {
     "applicationRestart": "Anwendung neu starten",
     "containerRestart": "Container neu starten",
@@ -4468,5 +4767,147 @@
     "bannerMessage": "Konfigurationsänderungen erfordern einen Neustart:",
     "bannerAction": "Jetzt neu starten",
     "restartFailed": "Neustart konnte nicht eingeleitet werden"
+  },
+  "help": {
+    "title": "Hilfe & Support",
+    "subtitle": "Hilfe erhalten, Probleme melden und mit der Community verbinden",
+    "reportBug": {
+      "description": "Wenn Sie auf ein Problem stoßen, eröffnen Sie einen Fehlerbericht auf GitHub, um das Problem zu beschreiben, und erstellen Sie dann ein Support-Paket mit der Issue-Nummer zur Fehlerbehebung."
+    },
+    "askQuestion": {
+      "description": "Haben Sie eine Frage zur Einrichtung, zu Funktionen oder zur Nutzung? Das GitHub Discussions Forum ist der beste Ort, um Hilfe von der Community zu erhalten."
+    },
+    "diagnostics": {
+      "description": "Erstellen Sie ein Support-Paket zur Fehlerdiagnose. Es erfasst Ihre Systemkonfiguration und aktuelle Protokolle."
+    },
+    "quickLinks": {
+      "title": "Schnellzugriff",
+      "releases": "Versionshinweise"
+    }
+  },
+  "reportBug": {
+    "title": "Fehler melden",
+    "subtitle": "Helfen Sie uns, Probleme zu beheben, indem Sie die benötigten Informationen bereitstellen",
+    "systemInfo": {
+      "title": "Ihre Systeminformationen",
+      "description": "Diese Informationen helfen bei der Identifizierung Ihrer Konfiguration. Kopieren Sie sie in Ihren Fehlerbericht.",
+      "version": "Version",
+      "buildDate": "Build-Datum",
+      "os": "Betriebssystem",
+      "copy": "In Zwischenablage kopieren",
+      "copied": "Kopiert!",
+      "architecture": "Architektur",
+      "hardware": "Hardware",
+      "environment": "Umgebung"
+    },
+    "whatToInclude": {
+      "title": "Was Ihr Bericht enthalten sollte",
+      "description": "Ein guter Fehlerbericht hilft uns, Ihr Problem schnell zu beheben. Bitte geben Sie Folgendes an:",
+      "step1": {
+        "title": "Klare Beschreibung des Problems",
+        "description": "Was passiert ist, was Sie erwartet haben und wie das Problem reproduziert werden kann."
+      },
+      "step2": {
+        "title": "Ihre Installationsmethode",
+        "description": "Wie Sie BirdNET-Go installiert haben: install.sh-Skript, Docker Compose, manueller Build oder anders."
+      },
+      "step3": {
+        "title": "Systeminformationen",
+        "description": "Kopieren Sie die oben angezeigten Systemdetails, einschließlich Version, Betriebssystem und Build-Datum."
+      },
+      "step4": {
+        "title": "Support-Paket",
+        "description": "Erstellen und laden Sie unten ein Support-Paket hoch. Es erfasst Protokolle und Konfigurationen, die die Fehlerbehebung erheblich beschleunigen."
+      }
+    },
+    "openIssue": {
+      "title": "GitHub-Issue erstellen",
+      "description": "Eröffnen Sie ein Issue auf GitHub, um das Problem zu beschreiben. Sie benötigen die Issue-Nummer im nächsten Schritt.",
+      "button": "Issue auf GitHub erstellen"
+    },
+    "supportDump": {
+      "title": "Support-Paket erstellen",
+      "description": "Erstellen Sie nach dem Eröffnen des Issues ein Support-Paket und geben Sie die GitHub-Issue-Nummer ein. Dies verknüpft Ihre Diagnose mit dem Fehlerbericht und hilft bei der Fehlerbehebung."
+    }
+  },
+  "health": {
+    "title": "System Health",
+    "running": "Running diagnostics...",
+    "lastRun": "Last run",
+    "refresh": "Aktualisieren",
+    "exportText": "Copy Report",
+    "exportJSON": "Download JSON",
+    "copied": "Report copied to clipboard",
+    "duration": "Duration",
+    "summary": {
+      "healthy": "Healthy",
+      "warnings": "Warnings",
+      "critical": "Critical",
+      "skipped": "Skipped",
+      "total": "Total checks"
+    },
+    "metricFooter": {
+      "allPassing": "Alles in Ordnung",
+      "needsAttention": "Erfordert Aufmerksamkeit",
+      "failing": "Fehlerhaft",
+      "allClear": "Keine Probleme",
+      "noData": "Keine Daten",
+      "none": "Keine"
+    },
+    "diagnostics": "Diagnose",
+    "categories": {
+      "system": "System",
+      "audio": "Audio Pipeline",
+      "analysis": "Analysis",
+      "streams": "Audio Streams",
+      "database": "Database",
+      "network": "Network",
+      "config": "Configuration",
+      "logs": "Logs"
+    },
+    "status": {
+      "healthy": "Healthy",
+      "warning": "Warning",
+      "critical": "Critical",
+      "unknown": "Unknown",
+      "skipped": "Skipped"
+    },
+    "errors": {
+      "title": "Recent Errors",
+      "noErrors": "No recent errors",
+      "fetchFailed": "Failed to load diagnostics"
+    },
+    "export": {
+      "reportTitle": "BirdNET-Go System Health Report",
+      "statusLabel": "Status",
+      "timeLabel": "Time",
+      "durationLabel": "Duration",
+      "checksLabel": "Checks"
+    },
+    "logs": {
+      "topErrors": "Häufigste Fehler",
+      "errorCount": "Anzahl",
+      "errorComponent": "Komponente",
+      "errorLevel": "Stufe",
+      "errorMessage": "Nachricht"
+    },
+    "window": {
+      "label": "Auswertungszeitraum",
+      "15m": "15m",
+      "30m": "30m",
+      "1h": "1h",
+      "6h": "6h",
+      "24h": "24h",
+      "7d": "7d"
+    },
+    "detail": {
+      "lastEvent": "Letztes Ereignis",
+      "recentEvents": "Letzte Ereignisse",
+      "time": "Zeit",
+      "source": "Quelle",
+      "count": "Anzahl",
+      "lifetime": "gesamt",
+      "sparklineLabel": "Aktivitäts-Sparkline"
+    }
   }
 }

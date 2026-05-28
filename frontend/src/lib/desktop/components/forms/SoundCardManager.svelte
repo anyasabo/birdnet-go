@@ -14,18 +14,20 @@
   @component
 -->
 <script lang="ts">
-  import { Plus, Mic, RefreshCw, ChevronDown } from '@lucide/svelte';
-  import { untrack } from 'svelte';
+  import { Plus, Mic, RefreshCw, ChevronDown, AlertTriangle, Info } from '@lucide/svelte';
   import { slide } from 'svelte/transition';
   import { t } from '$lib/i18n';
   import { loggers } from '$lib/utils/logger';
+  import { generateId } from '$lib/utils/uuid';
+  import { fetchDeviceCapabilities as fetchCapabilities } from '$lib/utils/audio/sampleRate';
   import { toastActions } from '$lib/stores/toast';
-  import { api } from '$lib/utils/api';
   import { cn } from '$lib/utils/cn';
+  import { getAvailableModels, DEFAULT_MODEL_ID, fetchModels } from '$lib/stores/models.svelte';
   import SoundCardCard from './SoundCardCard.svelte';
   import SelectDropdown from './SelectDropdown.svelte';
   import TextInput from './TextInput.svelte';
   import InlineSlider from './InlineSlider.svelte';
+  import ModelCheckboxList from './ModelCheckboxList.svelte';
   import QuietHoursEditor from './QuietHoursEditor.svelte';
   import AudioEqualizerSettings from '$lib/desktop/features/settings/components/AudioEqualizerSettings.svelte';
   import EmptyState from '$lib/desktop/features/settings/components/EmptyState.svelte';
@@ -53,8 +55,7 @@
 
   const logger = loggers.audio;
 
-  // Default model ID — BirdNET v2.4 is the built-in default
-  const DEFAULT_MODEL_ID = 'birdnet';
+  const availableModels = $derived(getAvailableModels());
 
   function getDefaultModels(): string[] {
     if (availableModels.some(m => m.id === DEFAULT_MODEL_ID)) {
@@ -63,43 +64,10 @@
     return availableModels.length > 0 ? [availableModels[0].id] : [DEFAULT_MODEL_ID];
   }
 
-  // Fetch available models from backend API
-  interface BackendModel {
-    id: string;
-    name: string;
-  }
-
-  let availableModels = $state<BackendModel[]>([]);
-
   $effect(() => {
-    const controller = new AbortController();
-
-    untrack(() => {
-      api
-        .get<BackendModel[]>('/api/v2/models', { signal: controller.signal })
-        .then(data => {
-          if (Array.isArray(data)) {
-            availableModels = data;
-          } else {
-            logger.warn('Fetched models response is not an array', {
-              component: 'SoundCardManager',
-            });
-          }
-        })
-        .catch((err: unknown) => {
-          if (err instanceof Error && err.name !== 'AbortError') {
-            logger.error('Failed to fetch models', err, {
-              component: 'SoundCardManager',
-              action: 'fetchModels',
-            });
-          }
-        });
-    });
-
-    return () => controller.abort();
+    return fetchModels();
   });
 
-  // Model options — dynamically loaded from enabled models in config
   const modelOptions = $derived(availableModels.map(m => ({ value: m.id, label: m.name })));
 
   interface Props {
@@ -125,6 +93,13 @@
   let newName = $state('');
   let newDevice = $state('');
   let newGain = $state(0);
+  let newSampleRate = $state(48000);
+  let newSampleRateOptions = $state<Array<{ value: string; label: string }>>([
+    { value: '48000', label: '48 kHz' },
+  ]);
+  let newSampleRateVerified = $state(true);
+  let newSampleRateLoading = $state(false);
+  let newFetchController: AbortController | null = $state(null);
   let newModels = $state<string[]>([]);
   let newEqualizer = $state<LocalEqualizerSettings>({ enabled: false, filters: [] });
   let newQuietHours = $state<QuietHoursConfig>({ ...defaultQuietHoursConfig });
@@ -150,6 +125,10 @@
     newName = '';
     newDevice = '';
     newGain = 0;
+    newSampleRate = 48000;
+    newSampleRateOptions = [{ value: '48000', label: '48 kHz' }];
+    newSampleRateVerified = true;
+    prevNewDevice = '';
     newModels = getDefaultModels();
     newEqualizer = { enabled: false, filters: [] };
     newQuietHours = { ...defaultQuietHoursConfig };
@@ -207,7 +186,7 @@
             enabled: newEqualizer.enabled,
             filters: newEqualizer.filters.map(f => ({
               ...f,
-              id: f.id || (crypto?.randomUUID?.() ?? Math.random().toString(36).substr(2, 9)),
+              id: f.id || generateId(),
             })),
           }
         : undefined;
@@ -215,6 +194,7 @@
     const newSource: AudioSourceConfig = {
       name: trimmedName,
       device: newDevice,
+      sampleRate: newSampleRate,
       gain: newGain,
       models: newModels,
       equalizer: transformedEqualizer,
@@ -269,6 +249,33 @@
   function handleNewEqualizerUpdate(updated: LocalEqualizerSettings) {
     newEqualizer = { ...updated };
   }
+
+  async function fetchNewDeviceCapabilities(deviceId: string) {
+    if (!deviceId) return;
+    newFetchController?.abort();
+    newFetchController = new AbortController();
+    newSampleRateLoading = true;
+    try {
+      const result = await fetchCapabilities(deviceId, newFetchController.signal);
+      newSampleRateOptions = result.options;
+      newSampleRateVerified = result.verified;
+    } catch {
+      // Only AbortError reaches here (utility handles all other failures internally)
+    } finally {
+      newSampleRateLoading = false;
+    }
+  }
+
+  let prevNewDevice = '';
+  $effect(() => {
+    if (newDevice && newDevice !== prevNewDevice) {
+      prevNewDevice = newDevice;
+      fetchNewDeviceCapabilities(newDevice);
+    }
+    return () => {
+      newFetchController?.abort();
+    };
+  });
 </script>
 
 <div class="space-y-4">
@@ -323,6 +330,7 @@
           {sources}
           {audioDevices}
           {modelOptions}
+          {availableModels}
           {disabled}
           onUpdate={updatedSource => updateSource(index, updatedSource)}
           onDelete={() => deleteSource(index)}
@@ -387,31 +395,56 @@
               {/if}
             </div>
 
-            <!-- Gain and Model -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <InlineSlider
-                label={t('settings.audio.soundCards.gainLabel')}
-                value={newGain}
-                onUpdate={value => (newGain = value)}
-                min={-40}
-                max={40}
-                step={1}
-                unit=" dB"
-                {disabled}
-                className="h-full [&>input]:my-auto"
-              />
-
+            <!-- Sample Rate -->
+            <div>
               <SelectDropdown
-                value={newModels}
-                label={t('settings.audio.soundCards.modelLabel')}
-                options={modelOptions}
-                multiple={true}
+                value={String(newSampleRate)}
+                label={t('settings.audio.soundCards.sampleRateLabel')}
+                options={newSampleRateOptions}
                 {disabled}
-                onChange={value => (newModels = value as string[])}
+                onChange={value => (newSampleRate = Number(value))}
                 groupBy={false}
                 menuSize="sm"
               />
+              {#if !newSampleRateVerified && !newSampleRateLoading}
+                <p class="flex items-center gap-1 text-xs text-[var(--color-warning)] mt-1">
+                  <AlertTriangle class="size-3" />
+                  {t('settings.audio.soundCards.sampleRateUnverified')}
+                </p>
+              {/if}
+              {#if newSampleRateLoading}
+                <p class="text-xs text-[var(--color-base-content)]/60 mt-1 animate-pulse">
+                  {t('settings.audio.soundCards.sampleRateProbing')}
+                </p>
+              {/if}
+              {#if newSampleRate > 48000}
+                <p class="flex items-center gap-1 text-xs text-[var(--color-info)] mt-1">
+                  <Info class="size-3 shrink-0" />
+                  {t('settings.audio.soundCards.sampleRateExclusive')}
+                </p>
+              {/if}
             </div>
+
+            <!-- Gain -->
+            <InlineSlider
+              label={t('settings.audio.soundCards.gainLabel')}
+              value={newGain}
+              onUpdate={value => (newGain = value)}
+              min={-40}
+              max={40}
+              step={1}
+              unit=" dB"
+              {disabled}
+            />
+
+            <!-- Model Selection -->
+            <ModelCheckboxList
+              models={availableModels}
+              selectedModels={newModels}
+              sourceSampleRate={newSampleRate}
+              {disabled}
+              onToggle={models => (newModels = models)}
+            />
 
             <!-- Equalizer (expandable) -->
             <div>

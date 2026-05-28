@@ -44,13 +44,26 @@ type Result struct {
 	ClipName       string        // Saved audio clip filename
 	ProcessingTime time.Duration // How long analysis took
 
+	// Validation flags
+	Unlikely bool // Tagged by the ultrasonic validation filter when source audio lacks bat echolocation characteristics
+
 	// Runtime-only data (not persisted)
-	Occurrence float64 // Probability 0-1 based on location/time/season
+	Occurrence            float64                       // Probability 0-1 based on location/time/season
+	ModelContributions    map[string]ResultModelContrib // Per-model detection data from cross-model consensus, keyed by model ID
+	UltrasonicCV          float64                       // US frame CV value from validation filter (for comment generation)
+	UltrasonicCVThreshold float64                       // CV threshold used by validation filter (for comment generation)
 
 	// Review status (populated from DB relations when loaded)
 	Verified string
 	Locked   bool
 	Comments []Comment
+}
+
+// ResultModelContrib records a single AI model's contribution to a detection.
+type ResultModelContrib struct {
+	Model         ModelInfo
+	HitCount      int
+	MaxConfidence float64
 }
 
 // Comment represents a user comment on a detection.

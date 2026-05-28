@@ -18,6 +18,33 @@ type Classifier interface {
 	Close()
 }
 
+// EmbeddingExtractor extends Classifier with the ability to also return
+// embedding vectors from models that produce them (e.g., patched BirdNET v2.4).
+type EmbeddingExtractor interface {
+	Classifier
+	// PredictWithEmbeddings runs classification and returns both raw logits
+	// and the embedding vector. Returns nil embeddings if the model does not
+	// produce embeddings.
+	PredictWithEmbeddings(samples []float32) (logits []float32, embeddings []float32, err error)
+}
+
+// CustomClassifier runs secondary classification on embedding vectors.
+// Used for custom classification heads (e.g., bat species from BirdNET embeddings).
+type CustomClassifier interface {
+	// PredictEmbedding runs inference on an embedding vector and returns
+	// sigmoid-applied scores for each class.
+	PredictEmbedding(embeddings []float32) ([]float32, error)
+
+	// NumClasses returns the number of output classes.
+	NumClasses() int
+
+	// Labels returns the classification labels.
+	Labels() []string
+
+	// Close releases all runtime resources.
+	Close()
+}
+
 // RangeFilter abstracts the ML runtime for geographic range filtering.
 // Implementations are NOT goroutine-safe; callers must synchronize access.
 type RangeFilter interface {
@@ -31,4 +58,14 @@ type RangeFilter interface {
 
 	// Close releases all runtime resources.
 	Close()
+}
+
+// BatchRangeFilter extends RangeFilter with batch inference support.
+// Implementations are NOT goroutine-safe; callers must synchronize access.
+type BatchRangeFilter interface {
+	RangeFilter
+	// PredictBatch runs inference on multiple location/week inputs in a single batch.
+	// inputs is a flat slice of [lat, lon, week] triples: len(inputs) must equal batchSize * 3.
+	// Returns a flat slice of [batchSize * numSpecies] scores in row-major order.
+	PredictBatch(inputs []float32, batchSize int) ([]float32, error)
 }

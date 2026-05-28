@@ -2,11 +2,14 @@ package analysis
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 
 	"github.com/tphakala/birdnet-go/internal/app"
 	"github.com/tphakala/birdnet-go/internal/classifier"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/errors"
+	"github.com/tphakala/birdnet-go/internal/events"
 	"github.com/tphakala/birdnet-go/internal/logger"
 )
 
@@ -16,8 +19,9 @@ const birdNETAnalyzerName = "birdnet-analyzer"
 // BirdNETAnalyzer wraps BirdNET model initialization as an app.Service
 // and implements app.Analyzer for source-to-analyzer routing.
 type BirdNETAnalyzer struct {
-	settings *conf.Settings
-	bn       *classifier.Orchestrator
+	settings     *conf.Settings
+	bn           *classifier.Orchestrator
+	modelManager *classifier.ModelManager
 }
 
 // NewBirdNETAnalyzer creates a new BirdNETAnalyzer with the given settings.
@@ -53,6 +57,15 @@ func (a *BirdNETAnalyzer) Start(_ context.Context) error {
 	}
 
 	a.bn = bn
+
+	events.Emit(context.Background(), "detection", "model_loaded", "BirdNET model loaded", map[string]any{
+		"species_count": len(bn.Settings.BirdNET.Labels),
+	})
+
+	// Initialize ModelManager for the model gallery. Failure is non-fatal
+	// because the gallery is an optional feature; core detection still works.
+	a.initModelManager(bn)
+
 	return nil
 }
 
@@ -66,6 +79,7 @@ func (a *BirdNETAnalyzer) Stop(_ context.Context) error {
 		a.bn.Delete()
 		a.bn = nil
 	}
+	a.modelManager = nil
 	return nil
 }
 
@@ -79,4 +93,45 @@ func (a *BirdNETAnalyzer) Compatible(source app.AudioSource) bool {
 // has not been started. Callers must not use the returned pointer after Stop().
 func (a *BirdNETAnalyzer) BirdNET() *classifier.Orchestrator {
 	return a.bn
+}
+
+// ModelManager returns the model gallery manager, or nil if initialization
+// was skipped or failed. Callers must not use the returned pointer after Stop().
+func (a *BirdNETAnalyzer) ModelManager() *classifier.ModelManager {
+	return a.modelManager
+}
+
+// initModelManager creates and populates the ModelManager for the model gallery.
+// If the models directory cannot be determined or the manager fails to scan,
+// a warning is logged and the analyzer continues without gallery support.
+func (a *BirdNETAnalyzer) initModelManager(bn *classifier.Orchestrator) {
+	log := GetLogger()
+
+	modelsDir := a.settings.Models.Directory
+	if modelsDir == "" {
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			homeDir, homeErr := conf.GetUserHomeDir()
+			if homeErr != nil {
+				log.Warn("could not determine config or home directory; model gallery disabled",
+					logger.Error(err),
+					logger.String("home_error", homeErr.Error()),
+					logger.String("service", birdNETAnalyzerName))
+				return
+			}
+			configDir = filepath.Join(homeDir, ".config")
+			log.Warn("UserConfigDir unavailable, falling back to home directory",
+				logger.Error(err),
+				logger.String("fallback", configDir),
+				logger.String("service", birdNETAnalyzerName))
+		}
+		modelsDir = filepath.Join(configDir, "birdnet-go", "models")
+	}
+
+	a.modelManager = classifier.NewModelManager(modelsDir, bn, a.settings)
+	a.modelManager.ScanInstalled()
+
+	log.Info("model manager initialized",
+		logger.String("models_dir", modelsDir),
+		logger.String("service", birdNETAnalyzerName))
 }

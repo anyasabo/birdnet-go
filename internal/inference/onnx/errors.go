@@ -1,5 +1,3 @@
-//go:build onnx
-
 package onnx
 
 import (
@@ -11,6 +9,7 @@ var (
 	ErrModelPathRequired = errors.New("birdnet: model path is required")
 	ErrLabelsRequired    = errors.New("birdnet: labels are required")
 	ErrEmptyBatch        = errors.New("birdnet: batch must contain at least one segment")
+	ErrSessionClosed     = errors.New("birdnet: session is closed")
 )
 
 type InputSizeError struct {
@@ -30,6 +29,15 @@ type BatchInputSizeError struct {
 
 func (e *BatchInputSizeError) Error() string {
 	return fmt.Sprintf("birdnet: segment %d has %d audio samples, expected %d", e.Index, e.Got, e.Expected)
+}
+
+type EmbeddingDimMismatchError struct {
+	Expected int
+	Got      int
+}
+
+func (e *EmbeddingDimMismatchError) Error() string {
+	return fmt.Sprintf("birdnet: embedding dimension mismatch: classifier expects %d, got %d", e.Expected, e.Got)
 }
 
 type LabelCountError struct {
@@ -76,4 +84,17 @@ type InvalidDateError struct {
 
 func (e *InvalidDateError) Error() string {
 	return fmt.Sprintf("birdnet: invalid date (month=%d, day=%d): %s", e.Month, e.Day, e.Reason)
+}
+
+// ErrEmptyRangeFilterBatch is returned when PredictBatchRaw receives zero inputs.
+var ErrEmptyRangeFilterBatch = errors.New("birdnet: range filter batch must contain at least one input")
+
+// RangeFilterBatchInputError is returned when the input slice length doesn't match batchSize * 3.
+type RangeFilterBatchInputError struct {
+	Expected int
+	Got      int
+}
+
+func (e *RangeFilterBatchInputError) Error() string {
+	return fmt.Sprintf("birdnet: range filter batch input has %d values, expected %d (batchSize * 3)", e.Got, e.Expected)
 }

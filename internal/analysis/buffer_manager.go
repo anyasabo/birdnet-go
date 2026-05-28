@@ -13,6 +13,8 @@ import (
 	"github.com/tphakala/birdnet-go/internal/logger"
 )
 
+const bufferMonitorDebugEveryTicks = 300
+
 // monitorKey identifies a unique monitor (one per source x model).
 type monitorKey struct {
 	sourceID string
@@ -30,7 +32,7 @@ type monitorConfig struct {
 
 // BufferManager handles the lifecycle of analysis buffer monitors
 type BufferManager struct {
-	monitors  sync.Map // keyed by monitorKey → chan struct{}
+	monitors  sync.Map // keyed by monitorKey -> chan struct{}
 	bn        *classifier.Orchestrator
 	bufferMgr *buffer.Manager
 	quitChan  chan struct{}
@@ -201,7 +203,7 @@ func (m *BufferManager) AddMonitors(source string, models []monitorConfig) error
 		// Use the channel we just stored (actual is our monitorQuit channel)
 		monitorQuit = actual.(chan struct{})
 
-		m.logger.Debug("Allocated analysis buffer monitor",
+		m.logger.Info("allocated analysis buffer monitor",
 			logger.String("source_id", source),
 			logger.String("model_id", cfg.modelID),
 			logger.String("component", "analysis.buffer"),
@@ -239,7 +241,7 @@ func (m *BufferManager) AddMonitors(source string, models []monitorConfig) error
 			}()
 
 			// Run the monitor using audiocore buffer manager
-			m.analysisBufferMonitor(monitorQuit, monitorCfg)
+			m.analysisBufferMonitor(monitorQuit, &monitorCfg)
 		})
 	}
 
@@ -384,17 +386,13 @@ func (m *BufferManager) UpdateMonitors(sourceModels map[string][]monitorConfig) 
 
 // analysisBufferMonitor reads from the audiocore analysis buffer and feeds
 // audio chunks to the BirdNET analysis pipeline.
-func (m *BufferManager) analysisBufferMonitor(quitChan chan struct{}, cfg monitorConfig) {
-	const detectionOffset = 10 * time.Second
+func (m *BufferManager) analysisBufferMonitor(quitChan chan struct{}, cfg *monitorConfig) {
+	detectionOffset := cfg.spec.ClipLength
 	const pollInterval = 100 * time.Millisecond
 
-	// Use the model-specific read size from the config instead of the
-	// hardcoded constant that assumed BirdNET v2.4 parameters.
 	analysisWindowBytes := cfg.readSize
-
-	// Track whether we ever successfully accessed the buffer to
-	// distinguish "never allocated" from "removed after use".
 	hasReadBuffer := false
+	var tickCount int64
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
@@ -404,7 +402,8 @@ func (m *BufferManager) analysisBufferMonitor(quitChan chan struct{}, cfg monito
 		case <-quitChan:
 			return
 		case <-ticker.C:
-			keepRunning, newHasReadBuffer := m.processMonitorTick(quitChan, cfg, analysisWindowBytes, detectionOffset, hasReadBuffer)
+			tickCount++
+			keepRunning, newHasReadBuffer := m.processMonitorTick(quitChan, cfg, analysisWindowBytes, detectionOffset, hasReadBuffer, tickCount)
 			hasReadBuffer = newHasReadBuffer
 			if !keepRunning {
 				return
@@ -427,10 +426,11 @@ func (m *BufferManager) analysisBufferMonitor(quitChan chan struct{}, cfg monito
 // try-again-later (nil data), error, and partial-read branches releases.
 func (m *BufferManager) processMonitorTick(
 	quitChan <-chan struct{},
-	cfg monitorConfig,
+	cfg *monitorConfig,
 	analysisWindowBytes int,
 	detectionOffset time.Duration,
 	hasReadBuffer bool,
+	tickCount int64,
 ) (keepRunning, updatedHasReadBuffer bool) {
 	ab, err := m.bufferMgr.AnalysisBuffer(cfg.sourceID, cfg.modelID)
 	if err != nil {
@@ -454,8 +454,6 @@ func (m *BufferManager) processMonitorTick(
 			logger.String("source_id", cfg.sourceID),
 			logger.String("model_id", cfg.modelID),
 			logger.Error(readErr))
-		// Backoff one second, but exit immediately if the goroutine is
-		// told to shut down during the sleep.
 		select {
 		case <-time.After(1 * time.Second):
 			return true, hasReadBuffer
@@ -464,15 +462,30 @@ func (m *BufferManager) processMonitorTick(
 		}
 	}
 
-	// Exact equality is required: AnalysisBuffer.Read returns overlapSize +
-	// readSize bytes or nil. A partial read means the buffer has not yet
-	// accumulated enough data.
 	if len(data) != analysisWindowBytes {
+		if tickCount%bufferMonitorDebugEveryTicks == 0 {
+			m.logger.Debug("buffer monitor polling",
+				logger.String("source_id", cfg.sourceID),
+				logger.String("model_id", cfg.modelID),
+				logger.Int("data_len", len(data)),
+				logger.Int("expected", analysisWindowBytes))
+		}
 		return true, hasReadBuffer
 	}
 
+	// Skip inference for models that are currently inactive (e.g., bat model
+	// during daytime when nighttime-only scheduling is enabled). The buffered
+	// audio data is released by the existing defer release().
+	if !m.bn.IsModelActive(cfg.modelID) {
+		return true, hasReadBuffer
+	}
+
+	m.logger.Debug("buffer monitor dispatching to ProcessData",
+		logger.String("source_id", cfg.sourceID),
+		logger.String("model_id", cfg.modelID),
+		logger.Int("window_bytes", len(data)))
+
 	audioCapturedAt := time.Now()
-	// Calculate the offset dynamically to pick up runtime configuration changes.
 	beginTimeOffset := time.Duration(conf.Setting().Realtime.Audio.Export.PreCapture)*time.Second + detectionOffset
 	startTime := time.Now().Add(-beginTimeOffset)
 
@@ -491,8 +504,7 @@ func (m *BufferManager) processMonitorTick(
 // allocation time (in audio_pipeline_service.go), not by the monitor goroutine.
 func buildMonitorConfig(sourceID string, info *classifier.ModelInfo) monitorConfig {
 	spec := info.Spec
-	clipLenSec := int(spec.ClipLength.Seconds())
-	readSize := spec.SampleRate * clipLenSec * conf.NumChannels * (conf.BitDepth / 8)
+	readSize := spec.ClipSizeBytes()
 
 	return monitorConfig{
 		sourceID: sourceID,

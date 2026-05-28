@@ -18,6 +18,7 @@ package v2only
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -60,7 +61,9 @@ const (
 	maxHour = 23
 	// saveTransactionTimeout is the maximum duration for a Save transaction.
 	// This prevents indefinite lock holding during slow I/O operations.
-	saveTransactionTimeout = 30 * time.Second
+	saveTransactionTimeout  = 30 * time.Second
+	sqliteDetectionDateExpr = "date(d.detected_at, 'unixepoch', 'localtime')"
+	mysqlDetectionDateExpr  = "DATE(FROM_UNIXTIME(d.detected_at))"
 )
 
 // parseHour validates and parses an hour string to an integer.
@@ -78,21 +81,11 @@ func parseHour(hour string) (int, error) {
 
 // parseID converts a string ID to uint.
 func parseID(id string) (uint, error) {
-	parsed, err := strconv.ParseUint(id, 10, 32)
+	parsed, err := strconv.ParseUint(id, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid ID %q: %w", id, err)
 	}
 	return uint(parsed), nil
-}
-
-// extractScientificName extracts the scientific name from a species string that
-// may be in the legacy concatenated format "ScientificName_CommonName" or
-// "ScientificName_CommonName_Code". Returns just the scientific name portion.
-func extractScientificName(species string) string {
-	if sciName, _, ok := strings.Cut(species, "_"); ok {
-		return sciName
-	}
-	return species
 }
 
 // parseDetectionTimestamp converts date and time strings to Unix timestamp.
@@ -131,6 +124,7 @@ type Datastore struct {
 	imageCache   repository.ImageCacheRepository
 	threshold    repository.DynamicThresholdRepository
 	notification repository.NotificationHistoryRepository
+	appEvent     repository.AppEventRepository
 	log          logger.Logger
 	metrics      *datastore.Metrics
 	timezone     *time.Location
@@ -140,6 +134,7 @@ type Datastore struct {
 	defaultModelID     uint  // Model ID to use for new labels
 	speciesLabelTypeID uint  // "species" label type ID
 	avesClassID        *uint // "Aves" taxonomic class ID (optional)
+	chiropteraClassID  *uint // "Chiroptera" taxonomic class ID (optional)
 
 	// names holds the species name lookup maps behind an atomic.Pointer
 	// for lock-free reads and atomic swaps when locale changes.
@@ -172,6 +167,7 @@ type Config struct {
 	ImageCache   repository.ImageCacheRepository
 	Threshold    repository.DynamicThresholdRepository
 	Notification repository.NotificationHistoryRepository
+	AppEvent     repository.AppEventRepository
 	Logger       logger.Logger
 	Timezone     *time.Location
 	SunCalc      *suncalc.SunCalc
@@ -180,6 +176,7 @@ type Config struct {
 	DefaultModelID     uint  // Model ID to use for new labels (typically default BirdNET)
 	SpeciesLabelTypeID uint  // "species" label type ID
 	AvesClassID        *uint // "Aves" taxonomic class ID (optional)
+	ChiropteraClassID  *uint // "Chiroptera" taxonomic class ID (optional)
 
 	// Labels provides species label mappings in "ScientificName_CommonName" format.
 	// Used to build speciesMap for GetThresholdEvents workaround. See issue #1907.
@@ -250,6 +247,16 @@ func New(cfg *Config) (*Datastore, error) {
 		avesClassID = &avesClass.ID
 	}
 
+	// Get or verify Chiroptera taxonomic class ID (optional, for bats)
+	chiropteraClassID := cfg.ChiropteraClassID
+	if chiropteraClassID == nil {
+		var chiropteraClass entities.TaxonomicClass
+		if err := db.Where("name = ?", "Chiroptera").FirstOrCreate(&chiropteraClass, entities.TaxonomicClass{Name: "Chiroptera"}).Error; err != nil {
+			return nil, fmt.Errorf("failed to get Chiroptera taxonomic class: %w", err)
+		}
+		chiropteraClassID = &chiropteraClass.ID
+	}
+
 	tz := cfg.Timezone
 	if tz == nil {
 		tz = time.Local
@@ -274,12 +281,14 @@ func New(cfg *Config) (*Datastore, error) {
 		imageCache:         cfg.ImageCache,
 		threshold:          cfg.Threshold,
 		notification:       cfg.Notification,
+		appEvent:           cfg.AppEvent,
 		log:                cfg.Logger,
 		timezone:           tz,
 		suncalc:            cfg.SunCalc,
 		defaultModelID:     defaultModelID,
 		speciesLabelTypeID: speciesLabelTypeID,
 		avesClassID:        avesClassID,
+		chiropteraClassID:  chiropteraClassID,
 		speciesCodeMap:     speciesCodeMap,
 		dbCounters:         dbCounters,
 	}
@@ -410,9 +419,35 @@ func (ds *Datastore) SchemaVersion() string {
 	return datastore.SchemaVersionV2
 }
 
+// PingWithLatency executes SELECT 1 and returns the round-trip time.
+func (ds *Datastore) PingWithLatency(ctx context.Context) (time.Duration, error) {
+	db := ds.manager.DB()
+	if db == nil {
+		return 0, datastore.ErrDBNotConnected
+	}
+	start := time.Now()
+	var result int
+	if err := db.WithContext(ctx).Raw("SELECT 1").Scan(&result).Error; err != nil {
+		return 0, fmt.Errorf("database ping failed: %w", err)
+	}
+	return time.Since(start), nil
+}
+
+// CountDetectionsSince returns the number of detections recorded since the given time.
+func (ds *Datastore) CountDetectionsSince(ctx context.Context, since time.Time) (int, error) {
+	db := ds.manager.DB()
+	if db == nil {
+		return 0, datastore.ErrDBNotConnected
+	}
+	var count int64
+	if err := db.WithContext(ctx).Model(&entities.Detection{}).Where("detected_at >= ?", since.Unix()).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count detections failed: %w", err)
+	}
+	return int(count), nil
+}
+
 // GetDatabaseStats returns database statistics.
-func (ds *Datastore) GetDatabaseStats() (*datastore.DatabaseStats, error) {
-	ctx := context.Background()
+func (ds *Datastore) GetDatabaseStats(ctx context.Context) (*datastore.DatabaseStats, error) {
 	count, err := ds.detection.CountAll(ctx)
 	if err != nil {
 		return nil, err
@@ -430,29 +465,43 @@ func (ds *Datastore) GetDatabaseStats() (*datastore.DatabaseStats, error) {
 		Location:        ds.manager.Path(),
 	}
 
-	// Get database size (best-effort)
-	if !ds.manager.IsMySQL() {
-		var pageCount, pageSize int64
-		db := ds.manager.DB()
-		db.Raw("PRAGMA page_count").Scan(&pageCount)
-		db.Raw("PRAGMA page_size").Scan(&pageSize)
-		stats.SizeBytes = pageCount * pageSize
-	} else {
-		db := ds.manager.DB()
-		db.Raw(`
-			SELECT SUM(DATA_LENGTH + INDEX_LENGTH)
-			FROM information_schema.TABLES
-			WHERE TABLE_SCHEMA = DATABASE()
-		`).Scan(&stats.SizeBytes)
+	// Get database size (best-effort); guard against nil DB after concurrent Close()
+	if db := ds.manager.DB(); db != nil {
+		if !ds.manager.IsMySQL() {
+			_ = db.WithContext(ctx).Raw("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()").Scan(&stats.SizeBytes).Error
+		} else {
+			_ = db.WithContext(ctx).Raw(`
+				SELECT SUM(DATA_LENGTH + INDEX_LENGTH)
+				FROM information_schema.TABLES
+				WHERE TABLE_SCHEMA = DATABASE()
+			`).Scan(&stats.SizeBytes).Error
+		}
 	}
 
 	return stats, nil
 }
 
+// taxonomicClassForModel returns the appropriate taxonomic class ID for label
+// creation based on the model type. Bird models use Aves, bat models use
+// Chiroptera, and multi-taxa models use nil (no default taxonomic class).
+func (ds *Datastore) taxonomicClassForModel(modelType entities.ModelType) *uint {
+	switch modelType {
+	case entities.ModelTypeBat:
+		return ds.chiropteraClassID
+	case entities.ModelTypeMulti:
+		return nil
+	default:
+		return ds.avesClassID
+	}
+}
+
 // EnsureModelRegistered creates the model entry in ai_models if it doesn't exist.
 func (ds *Datastore) EnsureModelRegistered(info detection.ModelInfo) error {
+	if info.Name == "" {
+		info = detection.DefaultModelInfo()
+	}
 	ctx := context.Background()
-	_, err := ds.model.GetOrCreate(ctx, info.Name, info.Version, info.Variant, entities.ModelTypeBird, info.ClassifierPath)
+	_, err := ds.model.GetOrCreate(ctx, info.Name, info.Version, info.Variant, detection.ResolveModelType(info.Name, info.Version), info.ClassifierPath)
 	return err
 }
 
@@ -468,16 +517,19 @@ func (ds *Datastore) Save(note *datastore.Note, results []datastore.Results) err
 	if modelInfo.Name == "" {
 		modelInfo = detection.DefaultModelInfo()
 	}
-	model, err := ds.model.GetOrCreate(ctx, modelInfo.Name, modelInfo.Version, modelInfo.Variant, entities.ModelTypeBird, modelInfo.ClassifierPath)
+	model, err := ds.model.GetOrCreate(ctx, modelInfo.Name, modelInfo.Version, modelInfo.Variant, detection.ResolveModelType(modelInfo.Name, modelInfo.Version), modelInfo.ClassifierPath)
 	if err != nil {
 		return fmt.Errorf("failed to get/create model: %w", err)
 	}
+
+	// Resolve taxonomic class based on model type
+	taxonomicClassID := ds.taxonomicClassForModel(model.ModelType)
 
 	// NOTE: Label GetOrCreate calls are outside the transaction.
 	// If the detection save fails, orphaned reference data may persist.
 	// This is acceptable as they will be reused on subsequent saves.
 	// Extract scientific name in case it contains concatenated "ScientificName_CommonName" format.
-	label, err := ds.label.GetOrCreate(ctx, extractScientificName(note.ScientificName), model.ID, ds.speciesLabelTypeID, ds.avesClassID)
+	label, err := ds.label.GetOrCreate(ctx, detection.ExtractScientificName(note.ScientificName), model.ID, ds.speciesLabelTypeID, taxonomicClassID)
 	if err != nil {
 		return fmt.Errorf("failed to get/create label: %w", err)
 	}
@@ -492,22 +544,22 @@ func (ds *Datastore) Save(note *datastore.Note, results []datastore.Results) err
 		// the scientific name portion for v2 label storage.
 		speciesNames := make([]string, len(results))
 		for i, r := range results {
-			speciesNames[i] = extractScientificName(r.Species)
+			speciesNames[i] = detection.ExtractScientificName(r.Species)
 		}
 
 		// Batch resolve all labels (returns map[scientificName]*Label)
-		labelMap, err := ds.label.BatchGetOrCreate(ctx, speciesNames, model.ID, ds.speciesLabelTypeID, ds.avesClassID)
+		labelMap, err := ds.label.BatchGetOrCreate(ctx, speciesNames, model.ID, ds.speciesLabelTypeID, taxonomicClassID)
 		if err != nil {
 			return fmt.Errorf("failed to batch get/create prediction labels: %w", err)
 		}
 
 		// Build predLabels slice from map, preserving order
 		predLabels = make([]*entities.Label, len(results))
-		for i, r := range results {
-			sciName := extractScientificName(r.Species)
+		for i := range results {
+			sciName := speciesNames[i]
 			lbl, ok := labelMap[sciName]
 			if !ok {
-				return fmt.Errorf("label not found for species %s after batch creation", r.Species)
+				return fmt.Errorf("label not found for species %s after batch creation", results[i].Species)
 			}
 			predLabels[i] = lbl
 		}
@@ -521,6 +573,7 @@ func (ds *Datastore) Save(note *datastore.Note, results []datastore.Results) err
 		ModelID:    model.ID,
 		DetectedAt: detectedAt,
 		Confidence: note.Confidence,
+		Unlikely:   note.Unlikely,
 	}
 
 	if note.Latitude != 0 {
@@ -672,12 +725,12 @@ func (ds *Datastore) detectionToNote(det *entities.Detection) datastore.Note {
 	// Labels may contain legacy concatenated "ScientificName_CommonName" format,
 	// so extract only the scientific name portion.
 	if det.Label != nil && det.Label.ScientificName != "" {
-		scientificName = extractScientificName(det.Label.ScientificName)
+		scientificName = detection.ExtractScientificName(det.Label.ScientificName)
 	} else if det.LabelID > 0 && ds.label != nil {
 		// Label not preloaded, fetch it from the repository
 		ctx := context.Background()
 		if label, err := ds.label.GetByID(ctx, det.LabelID); err == nil && label != nil {
-			scientificName = extractScientificName(label.ScientificName)
+			scientificName = detection.ExtractScientificName(label.ScientificName)
 		}
 	}
 
@@ -772,6 +825,7 @@ func (ds *Datastore) detectionToNote(det *entities.Detection) datastore.Note {
 		ProcessingTime: processingTime,
 		Source:         source,
 		Comments:       comments,
+		Unlikely:       det.Unlikely,
 		Verified:       verified,
 		Locked:         locked,
 	}
@@ -813,7 +867,7 @@ func (ds *Datastore) detectionToRecord(det *entities.Detection) datastore.Detect
 	// so extract only the scientific name portion.
 	scientificName := ""
 	if det.Label != nil && det.Label.ScientificName != "" {
-		scientificName = extractScientificName(det.Label.ScientificName)
+		scientificName = detection.ExtractScientificName(det.Label.ScientificName)
 	}
 
 	// Look up common name from pre-built map, fallback to scientific name
@@ -885,6 +939,7 @@ func (ds *Datastore) detectionToRecord(det *entities.Detection) datastore.Detect
 		AudioFilePath:  audioFilePath,
 		Verified:       verified,
 		Locked:         locked,
+		Unlikely:       det.Unlikely,
 		HasAudio:       hasAudio,
 		Device:         device,
 		Source:         source,
@@ -985,7 +1040,7 @@ func (ds *Datastore) GetTopBirdsData(selectedDate string, minConfidenceNormalize
 		return nil, err
 	}
 	startTime := t.Unix()
-	endTime := t.Add(24 * time.Hour).Unix()
+	endTime := t.AddDate(0, 0, 1).Unix()
 
 	// Use provided limit or fall back to config value
 	reportCount := limit
@@ -1008,16 +1063,17 @@ func (ds *Datastore) GetTopBirdsData(selectedDate string, minConfidenceNormalize
 	// detection_predictions table (which only stores secondary predictions).
 	// Secondary sort by scientific_name ensures deterministic results when counts are equal.
 	// Excludes detections marked as false_positive.
+	prefix := ds.manager.TablePrefix()
 	db := ds.manager.DB()
-	err = db.Table("detections d").
+	err = db.Table(prefix+"detections d").
 		Select(`
 			l.scientific_name,
 			COUNT(d.id) as count,
 			MAX(d.confidence) as max_confidence,
 			MAX(d.detected_at) as latest_time
 		`).
-		Joins("JOIN labels l ON d.label_id = l.id").
-		Joins("LEFT JOIN detection_reviews dr ON d.id = dr.detection_id").
+		Joins(fmt.Sprintf("JOIN %slabels l ON d.label_id = l.id", prefix)).
+		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
 		Where("d.detected_at >= ? AND d.detected_at < ?", startTime, endTime).
 		Where("d.confidence >= ?", minConfidenceNormalized).
 		Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive)).
@@ -1038,7 +1094,7 @@ func (ds *Datastore) GetTopBirdsData(selectedDate string, minConfidenceNormalize
 
 		// Labels may contain legacy concatenated "ScientificName_CommonName" format,
 		// so extract only the scientific name portion.
-		sciName := extractScientificName(r.ScientificName)
+		sciName := detection.ExtractScientificName(r.ScientificName)
 
 		// Look up common name from the cached map
 		commonName := ds.resolveCommonName(sciName)
@@ -1086,7 +1142,7 @@ func (ds *Datastore) GetHourlyOccurrences(date, commonName string, minConfidence
 	}
 
 	startTime := t.Unix()
-	endTime := t.Add(24 * time.Hour).Unix()
+	endTime := t.AddDate(0, 0, 1).Unix()
 
 	// Single query with IN clause for all label IDs (multi-model support)
 	return ds.detection.GetHourlyOccurrences(ctx, labelIDs, startTime, endTime, minConfidenceNormalized)
@@ -1173,9 +1229,10 @@ func (ds *Datastore) GetBatchHourlyOccurrences(date string, species []string, mi
 
 	var results []result
 	// Exclude detections marked as false_positive
+	prefix := ds.manager.TablePrefix()
 	err = ds.manager.DB().WithContext(ctx).
-		Table("detections d").
-		Joins("LEFT JOIN detection_reviews dr ON d.id = dr.detection_id").
+		Table(prefix+"detections d").
+		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
 		Select(fmt.Sprintf("d.label_id as label_id, %s as hour, COUNT(*) as count", hourExpr)).
 		Where("d.label_id IN ?", flatLabelIDs).
 		Where("d.detected_at >= ? AND d.detected_at < ?", startOfDay, endOfDay).
@@ -1236,7 +1293,7 @@ func (ds *Datastore) SpeciesDetections(species, date, hour string, duration int,
 			} else {
 				// No hour specified - search the full day (matches legacy behavior)
 				start := t.Unix()
-				end := t.Add(24 * time.Hour).Unix()
+				end := t.AddDate(0, 0, 1).Unix()
 				startTime = &start
 				endTime = &end
 			}
@@ -1306,7 +1363,7 @@ func (ds *Datastore) GetAllDetectedSpecies() ([]datastore.Note, error) {
 	seen := make(map[string]struct{}, len(labels))
 	notes := make([]datastore.Note, 0, len(labels))
 	for i := range labels {
-		sciName := extractScientificName(labels[i].ScientificName)
+		sciName := detection.ExtractScientificName(labels[i].ScientificName)
 		if sciName != "" {
 			if _, exists := seen[sciName]; !exists {
 				seen[sciName] = struct{}{}
@@ -1492,7 +1549,7 @@ func (ds *Datastore) GetNoteResults(noteID string) ([]datastore.Results, error) 
 	for _, pred := range preds {
 		scientificName := ""
 		if label, ok := labelMap[pred.LabelID]; ok && label.ScientificName != "" {
-			scientificName = extractScientificName(label.ScientificName)
+			scientificName = detection.ExtractScientificName(label.ScientificName)
 		}
 
 		results = append(results, datastore.Results{
@@ -1804,7 +1861,7 @@ func (ds *Datastore) CountSpeciesDetections(species, date, hour string, duration
 			} else {
 				// No hour specified - search the full day (matches legacy behavior)
 				start := t.Unix()
-				end := t.Add(24 * time.Hour).Unix()
+				end := t.AddDate(0, 0, 1).Unix()
 				startTime = &start
 				endTime = &end
 			}
@@ -2078,13 +2135,14 @@ func (ds *Datastore) ClearNoteClipPathsByNames(clipNames []string) (int64, error
 	const batchSize = 500
 	var totalAffected int64
 	ctx := context.Background()
+	detectionsTable := ds.manager.TablePrefix() + "detections"
 
 	for i := 0; i < len(clipNames); i += batchSize {
 		end := min(i+batchSize, len(clipNames))
 		batch := clipNames[i:end]
 
 		result := ds.manager.DB().WithContext(ctx).
-			Table("detections").
+			Table(detectionsTable).
 			Where("clip_name IN ?", batch).
 			Update("clip_name", nil)
 		if result.Error != nil {
@@ -2104,7 +2162,7 @@ func (ds *Datastore) ClearNoteClipPathsByNames(clipNames []string) (int64, error
 // Handles legacy concatenated "ScientificName_CommonName" format.
 func imageCacheScientificName(cache *entities.ImageCache) string {
 	if cache.Label != nil && cache.Label.ScientificName != "" {
-		return extractScientificName(cache.Label.ScientificName)
+		return detection.ExtractScientificName(cache.Label.ScientificName)
 	}
 	return ""
 }
@@ -2243,7 +2301,7 @@ func (ds *Datastore) parseDateRange(startDate, endDate string) (start, end int64
 			return 0, 0, fmt.Errorf("invalid end date format: %w", parseErr)
 		}
 		// End time is exclusive (start of next day) - use with < in queries
-		end = t.Add(24 * time.Hour).Unix()
+		end = t.AddDate(0, 0, 1).Unix()
 	}
 
 	// When no end date specified, use max int64 to include all records.
@@ -2271,7 +2329,7 @@ func (ds *Datastore) GetSpeciesSummaryData(ctx context.Context, startDate, endDa
 	for _, d := range v2Data {
 		// Labels may contain legacy concatenated "ScientificName_CommonName" format,
 		// so extract only the scientific name portion.
-		sciName := extractScientificName(d.ScientificName)
+		sciName := detection.ExtractScientificName(d.ScientificName)
 
 		// Look up common name from pre-built map, fallback to scientific name
 		commonName := ds.resolveCommonName(sciName)
@@ -2423,6 +2481,7 @@ type speciesFirstSeenInfo struct {
 	LabelID        uint
 	ScientificName string
 	FirstDetected  int64
+	LastDetected   int64
 }
 
 // convertToNewSpeciesData converts species first-seen data to NewSpeciesData with common name resolution.
@@ -2435,16 +2494,21 @@ func (ds *Datastore) convertToNewSpeciesData(_ context.Context, data []speciesFi
 	for _, d := range data {
 		// Labels may contain legacy concatenated "ScientificName_CommonName" format,
 		// so extract only the scientific name portion.
-		sciName := extractScientificName(d.ScientificName)
+		sciName := detection.ExtractScientificName(d.ScientificName)
 
 		// Look up common name from pre-built map, fallback to scientific name
 		commonName := ds.resolveCommonName(sciName)
 
 		firstSeenDate := time.Unix(d.FirstDetected, 0).In(ds.timezone).Format(time.DateOnly)
+		var lastSeenDate string
+		if d.LastDetected > 0 {
+			lastSeenDate = time.Unix(d.LastDetected, 0).In(ds.timezone).Format(time.DateOnly)
+		}
 		result = append(result, datastore.NewSpeciesData{
 			ScientificName: sciName,
 			CommonName:     commonName,
 			FirstSeenDate:  firstSeenDate,
+			LastSeenDate:   lastSeenDate,
 			CountInPeriod:  0,
 		})
 	}
@@ -2470,6 +2534,7 @@ func (ds *Datastore) GetNewSpeciesDetections(ctx context.Context, startDate, end
 			LabelID:        d.LabelID,
 			ScientificName: d.ScientificName,
 			FirstDetected:  d.FirstDetected,
+			LastDetected:   d.LastDetected,
 		}
 	}
 
@@ -2501,6 +2566,103 @@ func (ds *Datastore) GetSpeciesFirstDetectionInPeriod(ctx context.Context, start
 	return ds.convertToNewSpeciesData(ctx, data), nil
 }
 
+// GetSpeciesDetectionDatesInPeriod returns distinct species/date pairs within a period.
+func (ds *Datastore) GetSpeciesDetectionDatesInPeriod(ctx context.Context, startDate, endDate string, limit, offset int) ([]datastore.SpeciesDetectionDate, error) {
+	start, end, err := ds.parseDateRange(startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 10000
+	}
+
+	dateExpr := sqliteDetectionDateExpr
+	if ds.manager.IsMySQL() {
+		dateExpr = mysqlDetectionDateExpr
+	}
+
+	type result struct {
+		ScientificName string `gorm:"column:scientific_name"`
+		Date           string `gorm:"column:date"`
+	}
+	var rows []result
+
+	prefix := ds.manager.TablePrefix()
+	query := ds.manager.DB().WithContext(ctx).
+		Table(prefix+"detections d").
+		Select(fmt.Sprintf("l.scientific_name as scientific_name, %s as date", dateExpr)).
+		Joins(fmt.Sprintf("JOIN %slabels l ON d.label_id = l.id", prefix)).
+		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
+		Where("d.detected_at >= ? AND d.detected_at < ?", start, end).
+		Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive)).
+		Group(fmt.Sprintf("l.scientific_name, %s", dateExpr)).
+		Order("date ASC, l.scientific_name ASC").
+		Limit(limit).
+		Offset(offset)
+
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_species_detection_dates_in_period").
+			Context("start_date", startDate).
+			Context("end_date", endDate).
+			Build()
+	}
+
+	results := make([]datastore.SpeciesDetectionDate, 0, len(rows))
+	for _, row := range rows {
+		scientificName := detection.ExtractScientificName(row.ScientificName)
+		results = append(results, datastore.SpeciesDetectionDate{
+			ScientificName: scientificName,
+			CommonName:     ds.resolveCommonName(scientificName),
+			Date:           row.Date,
+		})
+	}
+
+	return results, nil
+}
+
+// GetSpeciesLastDetectionDateBefore returns the last detection date before the given date.
+func (ds *Datastore) GetSpeciesLastDetectionDateBefore(ctx context.Context, scientificName, beforeDate string) (string, error) {
+	before, err := time.ParseInLocation(time.DateOnly, beforeDate, ds.timezone)
+	if err != nil {
+		return "", fmt.Errorf("invalid before date format: %w", err)
+	}
+
+	dateExpr := sqliteDetectionDateExpr
+	if ds.manager.IsMySQL() {
+		dateExpr = mysqlDetectionDateExpr
+	}
+
+	var result struct {
+		LastSeenDate string `gorm:"column:last_seen_date"`
+	}
+
+	escapedScientificName := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(scientificName)
+	prefix := ds.manager.TablePrefix()
+	query := ds.manager.DB().WithContext(ctx).
+		Table(prefix+"detections d").
+		Select(fmt.Sprintf("COALESCE(MAX(%s), '') as last_seen_date", dateExpr)).
+		Joins(fmt.Sprintf("JOIN %slabels l ON d.label_id = l.id", prefix)).
+		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
+		Where("d.detected_at < ?", before.Unix()).
+		Where("(l.scientific_name = ? OR l.scientific_name LIKE ? ESCAPE '\\')", scientificName, escapedScientificName+`\_%`).
+		Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive))
+
+	if err := query.Scan(&result).Error; err != nil {
+		return "", errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_species_last_detection_date_before").
+			Context("scientific_name", scientificName).
+			Context("before_date", beforeDate).
+			Build()
+	}
+
+	return result.LastSeenDate, nil
+}
+
 // GetSpeciesDiversityData returns unique species count per day.
 func (ds *Datastore) GetSpeciesDiversityData(ctx context.Context, startDate, endDate string) ([]datastore.DailyAnalyticsData, error) {
 	// Validate date formats before using in SQL
@@ -2520,19 +2682,18 @@ func (ds *Datastore) GetSpeciesDiversityData(ctx context.Context, startDate, end
 	// Generate database-agnostic date expression
 	// MySQL: DATE(FROM_UNIXTIME(d.detected_at))
 	// SQLite: date(d.detected_at, 'unixepoch', 'localtime') - localtime for timezone-aware bucketing
-	var dateExpr string
+	dateExpr := sqliteDetectionDateExpr
 	if ds.manager.IsMySQL() {
-		dateExpr = "DATE(FROM_UNIXTIME(d.detected_at))"
-	} else {
-		dateExpr = "date(d.detected_at, 'unixepoch', 'localtime')"
+		dateExpr = mysqlDetectionDateExpr
 	}
 
 	// Build query to count distinct species per day, excluding false positives
+	prefix := ds.manager.TablePrefix()
 	query := ds.manager.DB().WithContext(ctx).
-		Table("detections d").
+		Table(prefix+"detections d").
 		Select(fmt.Sprintf("%s as date, COUNT(DISTINCT l.scientific_name) as count", dateExpr)).
-		Joins("JOIN labels l ON d.label_id = l.id").
-		Joins("LEFT JOIN detection_reviews dr ON d.id = dr.detection_id").
+		Joins(fmt.Sprintf("JOIN %slabels l ON d.label_id = l.id", prefix)).
+		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
 		Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive)).
 		Group(dateExpr).
 		Order("date")
@@ -2568,7 +2729,7 @@ func (ds *Datastore) GetSpeciesDiversityData(ctx context.Context, startDate, end
 // thresholdScientificName extracts the scientific name from a threshold's label.
 func thresholdScientificName(t *entities.DynamicThreshold) string {
 	if t.Label != nil && t.Label.ScientificName != "" {
-		return extractScientificName(t.Label.ScientificName)
+		return detection.ExtractScientificName(t.Label.ScientificName)
 	}
 	return ""
 }
@@ -2585,18 +2746,22 @@ func thresholdModelName(t *entities.DynamicThreshold) string {
 // pre-built name maps. Falls back to the scientific name if no mapping exists.
 // Handles legacy concatenated "ScientificName_CommonName" format by extracting
 // only the scientific name portion before lookup.
-// Logs a warning (once per species) when the fallback is used and maps are populated,
-// to help diagnose issues where common names stop appearing.
+// Logs at info (once per species) when the fallback is used and maps are populated,
+// to help diagnose issues where common names stop appearing without surfacing
+// the benign fallback on the diagnostics health check.
 func (ds *Datastore) resolveCommonName(scientificName string) string {
-	sciName := extractScientificName(scientificName)
+	sciName := detection.ExtractScientificName(scientificName)
 	nm := ds.loadNameMaps()
 	if cn, ok := nm.common[sciName]; ok {
 		return cn
 	}
-	// Log once per missing species when maps are populated (not during startup with empty maps)
+	// Log once per missing species when maps are populated (not during startup with empty maps).
+	// Logged at info because the fallback to the scientific name is the intended
+	// behavior; surfacing as a warning made it surface on the diagnostics health
+	// check as an "elevated error count" for benign missing translations.
 	if len(nm.common) > 0 {
 		if _, alreadyLogged := ds.loggedMissingNames.LoadOrStore(sciName, struct{}{}); !alreadyLogged {
-			ds.log.Warn("common name not found in name maps, falling back to scientific name",
+			ds.log.Info("common name not found in name maps, falling back to scientific name",
 				logger.String("scientific_name", sciName),
 				logger.Int("name_map_size", len(nm.common)))
 		}
@@ -2815,7 +2980,7 @@ func (ds *Datastore) GetDynamicThresholdStats() (totalCount, activeCount, atMini
 // Handles legacy concatenated "ScientificName_CommonName" format.
 func eventSpeciesName(e *entities.ThresholdEvent) string {
 	if e.Label != nil && e.Label.ScientificName != "" {
-		return extractScientificName(e.Label.ScientificName)
+		return detection.ExtractScientificName(e.Label.ScientificName)
 	}
 	return ""
 }
@@ -2977,7 +3142,7 @@ func (ds *Datastore) DeleteAllThresholdEvents() (int64, error) {
 // Handles legacy concatenated "ScientificName_CommonName" format.
 func notificationScientificName(h *entities.NotificationHistory) string {
 	if h.Label != nil && h.Label.ScientificName != "" {
-		return extractScientificName(h.Label.ScientificName)
+		return detection.ExtractScientificName(h.Label.ScientificName)
 	}
 	return ""
 }
@@ -3059,4 +3224,119 @@ func (ds *Datastore) DeleteExpiredNotificationHistory(before time.Time) (int64, 
 	}
 	ctx := context.Background()
 	return ds.notification.DeleteExpiredNotificationHistory(ctx, before)
+}
+
+// SaveAppEvent persists an application event with JSON-encoded metadata.
+func (ds *Datastore) SaveAppEvent(ctx context.Context, category, eventType, message string, metadata map[string]any) error {
+	if ds.appEvent == nil {
+		return nil
+	}
+	metadataJSON := "{}"
+	if len(metadata) > 0 {
+		data, err := json.Marshal(metadata)
+		if err != nil {
+			if ds.log != nil {
+				ds.log.Warn("failed to marshal app event metadata",
+					logger.String("category", category),
+					logger.String("event_type", eventType),
+					logger.Error(err))
+			}
+			metadataJSON = `{"error":"failed to encode metadata"}`
+		} else {
+			metadataJSON = string(data)
+		}
+	}
+	event := &entities.AppEvent{
+		Timestamp: time.Now(),
+		Category:  category,
+		EventType: eventType,
+		Message:   message,
+		Metadata:  metadataJSON,
+	}
+	return ds.appEvent.Save(ctx, event)
+}
+
+// GetRecentAppEvents returns recent application events with decoded metadata.
+func (ds *Datastore) GetRecentAppEvents(ctx context.Context, limit int) ([]datastore.AppEvent, error) {
+	if ds.appEvent == nil {
+		return nil, nil
+	}
+	v2Events, err := ds.appEvent.GetRecent(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return convertAppEvents(v2Events), nil
+}
+
+// GetAppEventsSince returns application events since the given time.
+func (ds *Datastore) GetAppEventsSince(ctx context.Context, since time.Time, limit int) ([]datastore.AppEvent, error) {
+	if ds.appEvent == nil {
+		return nil, nil
+	}
+	v2Events, err := ds.appEvent.GetSince(ctx, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	return convertAppEvents(v2Events), nil
+}
+
+// PruneAppEvents removes events older than retentionDays and enforces the 10k row cap.
+func (ds *Datastore) PruneAppEvents(ctx context.Context, retentionDays int) (int64, error) {
+	if ds.appEvent == nil {
+		return 0, nil
+	}
+	if retentionDays < 0 {
+		return 0, fmt.Errorf("retentionDays must be non-negative, got %d", retentionDays)
+	}
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	deleted, err := ds.appEvent.DeleteBefore(ctx, cutoff)
+	if err != nil {
+		return deleted, err
+	}
+
+	const maxRows = 10_000
+	count, err := ds.appEvent.Count(ctx)
+	if err != nil {
+		return deleted, err
+	}
+	if count > maxRows {
+		events, err := ds.appEvent.GetRecent(ctx, maxRows+1)
+		if err != nil {
+			return deleted, err
+		}
+		if len(events) > maxRows {
+			cutoffEvent := events[maxRows]
+			extraDeleted, err := ds.appEvent.DeleteBefore(ctx, cutoffEvent.Timestamp)
+			if err != nil {
+				return deleted, err
+			}
+			deleted += extraDeleted
+		}
+	}
+
+	return deleted, nil
+}
+
+// convertAppEvents converts v2 entity events to datastore.AppEvent with decoded metadata.
+func convertAppEvents(v2Events []entities.AppEvent) []datastore.AppEvent {
+	if len(v2Events) == 0 {
+		return nil
+	}
+	result := make([]datastore.AppEvent, 0, len(v2Events))
+	for _, e := range v2Events {
+		ae := datastore.AppEvent{
+			Timestamp: e.Timestamp,
+			Category:  e.Category,
+			EventType: e.EventType,
+			Message:   e.Message,
+		}
+		if e.Metadata != "" && e.Metadata != "{}" {
+			var meta map[string]any
+			if json.Unmarshal([]byte(e.Metadata), &meta) == nil {
+				ae.Metadata = meta
+			}
+		}
+		result = append(result, ae)
+	}
+	return result
 }

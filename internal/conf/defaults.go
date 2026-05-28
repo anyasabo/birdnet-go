@@ -80,11 +80,21 @@ func setDefaultConfig() {
 	viper.SetDefault("birdnet.rangefilter.model", "latest")
 	viper.SetDefault("birdnet.rangefilter.threshold", 0.01)
 
-	// Perch model configuration (disabled by default)
-	viper.SetDefault("perch.enabled", false)
-	viper.SetDefault("perch.modelpath", "")
-	viper.SetDefault("perch.labelpath", "")
+	// Perch model configuration
 	viper.SetDefault("perch.threshold", 0.5)
+
+	// Bat detection configuration
+	viper.SetDefault("bat.threshold", 0.5)
+	viper.SetDefault("bat.filterenabled", false)
+	viper.SetDefault("bat.filtercutoffhz", 4000.0)
+	viper.SetDefault("bat.filterpasscount", 1)
+	viper.SetDefault("bat.nighttimeonly", true)
+	viper.SetDefault("bat.falsepositivefilter.level", 2)
+	viper.SetDefault("bat.ultrasonicfilter.enabled", true)
+	viper.SetDefault("bat.ultrasonicfilter.cvthreshold", 0.15)
+	viper.SetDefault("bat.ultrasonicfilter.fftsize", 8192)
+	viper.SetDefault("bat.ultrasonicfilter.hopsize", 4096)
+	viper.SetDefault("bat.ultrasonicfilter.frequencysplithz", 20000)
 
 	// Global model enablement (BirdNET only by default)
 	viper.SetDefault("models.enabled", []string{"birdnet"})
@@ -229,7 +239,7 @@ func setDefaultConfig() {
 
 	// New weather configuration
 	viper.SetDefault("realtime.weather.debug", false)
-	viper.SetDefault("realtime.weather.pollinterval", 60)
+	viper.SetDefault("realtime.weather.pollinterval", DefaultWeatherPollInterval)
 	viper.SetDefault("realtime.weather.provider", "yrno")
 
 	// OpenWeather specific configuration
@@ -330,10 +340,10 @@ func setDefaultConfig() {
 
 	// Live stream configuration
 	viper.SetDefault("webserver.livestream.debug", false)
-	viper.SetDefault("webserver.livestream.bitrate", 128)
-	viper.SetDefault("webserver.livestream.sampleRate", 48000)
-	viper.SetDefault("webserver.livestream.segmentLength", 2)
-	viper.SetDefault("webserver.livestream.ffmpegLogLevel", "warning")
+	viper.SetDefault("webserver.livestream.bitrate", DefaultLiveStreamBitRate)
+	viper.SetDefault("webserver.livestream.sampleRate", DefaultLiveStreamSampleRate)
+	viper.SetDefault("webserver.livestream.segmentLength", DefaultLiveStreamSegmentLength)
+	viper.SetDefault("webserver.livestream.ffmpegLogLevel", DefaultLiveStreamFFmpegLogLevel)
 
 	// File output configuration
 	viper.SetDefault("output.file.enabled", true)

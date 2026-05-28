@@ -1,5 +1,3 @@
-//go:build onnx
-
 package classifier
 
 import (
@@ -10,9 +8,35 @@ import (
 // loadPerch creates and registers a Perch v2 model instance from settings.
 func (o *Orchestrator) loadPerch(threads int) error {
 	log := GetLogger()
+
+	modelPath := o.Settings.Perch.ModelPath
+	labelPath := o.Settings.Perch.LabelPath
+
+	if modelPath == "" || labelPath == "" {
+		m, l, _ := o.resolveInstalledPaths(RegistryIDPerchV2)
+		if modelPath == "" {
+			modelPath = m
+		}
+		if labelPath == "" {
+			labelPath = l
+		}
+	}
+
+	if modelPath == "" || labelPath == "" {
+		return errors.Newf("Perch v2 model files not installed or configured").
+			Component("classifier.orchestrator").
+			Category(errors.CategoryModelInit).
+			Context("model", "Perch_V2").
+			Build()
+	}
+
+	if err := checkORTOrFail(o.Settings.BirdNET.ONNXRuntimePath, "Perch v2", "Perch_V2", "classifier.orchestrator"); err != nil {
+		return err
+	}
+
 	cfg := PerchConfig{
-		ModelPath:       o.Settings.Perch.ModelPath,
-		LabelPath:       o.Settings.Perch.LabelPath,
+		ModelPath:       modelPath,
+		LabelPath:       labelPath,
 		ONNXRuntimePath: o.Settings.BirdNET.ONNXRuntimePath,
 		Threads:         threads,
 	}

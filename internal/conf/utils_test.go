@@ -2,7 +2,10 @@ package conf
 
 import (
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -199,23 +202,18 @@ func TestParsePercentage(t *testing.T) {
 }
 
 func TestGetFfmpegVersion(t *testing.T) {
-	// This test will only work if ffmpeg is installed on the system
-	version, major, minor := GetFfmpegVersion()
-
-	// If ffmpeg is not available, the function should return empty values
-	if version == "" {
+	ffmpegPath, err := exec.LookPath(GetFfmpegBinaryName())
+	if err != nil {
 		t.Skip("ffmpeg not available on system, skipping integration test")
 	}
 
-	// If we got a version, validate it has sensible values
-	// Note: For git builds, major version is derived from libavutil, so it should be valid
+	version, major, minor := GetFfmpegVersionFrom(ffmpegPath)
+	require.NotEmpty(t, version)
+
 	assert.GreaterOrEqual(t, major, 3, "major version should be at least 3")
 	assert.LessOrEqual(t, major, 10, "major version should be at most 10")
-
 	assert.GreaterOrEqual(t, minor, 0, "minor version should be non-negative")
 	assert.LessOrEqual(t, minor, 99, "minor version should be at most 99")
-
-	// Additional validation: if major is 0, something went wrong
 	assert.NotEqual(t, 0, major, "failed to detect major version, got: version=%s, major=%d, minor=%d", version, major, minor)
 
 	t.Logf("Detected FFmpeg version: %s (major: %d, minor: %d)", version, major, minor)
@@ -277,4 +275,107 @@ func TestFindConfigFile_EmptyConfigPathFallsThrough(t *testing.T) {
 	} else {
 		assert.NotEmpty(t, result, "returned path should not be empty on success")
 	}
+}
+
+func TestGetSoxFormats_WithExplicitPath(t *testing.T) {
+	soxPath, err := exec.LookPath(GetSoxBinaryName())
+	if err != nil {
+		t.Skip("SoX not available in PATH, skipping")
+	}
+
+	formats := GetSoxFormats(soxPath)
+	require.NotEmpty(t, formats, "SoX should report supported formats")
+	assert.Contains(t, formats, "wav")
+}
+
+func TestGetSoxFormats_WithInvalidPath(t *testing.T) {
+	formats := GetSoxFormats("/nonexistent/sox")
+	assert.Empty(t, formats)
+}
+
+func TestGetFfmpegVersionFrom_WithExplicitPath(t *testing.T) {
+	ffmpegPath, err := exec.LookPath(GetFfmpegBinaryName())
+	if err != nil {
+		t.Skip("FFmpeg not available in PATH, skipping")
+	}
+
+	version, major, _ := GetFfmpegVersionFrom(ffmpegPath)
+	assert.NotEmpty(t, version)
+	assert.Positive(t, major)
+}
+
+func TestGetFfmpegVersionFrom_WithInvalidPath(t *testing.T) {
+	version, major, minor := GetFfmpegVersionFrom("/nonexistent/ffmpeg")
+	assert.Empty(t, version)
+	assert.Zero(t, major)
+	assert.Zero(t, minor)
+}
+
+func TestGetUserHomeDir(t *testing.T) {
+	t.Run("returns a non-empty directory", func(t *testing.T) {
+		homeDir, err := GetUserHomeDir()
+		require.NoError(t, err)
+		assert.NotEmpty(t, homeDir)
+		assert.DirExists(t, homeDir)
+	})
+
+	t.Run("result is cached", func(t *testing.T) {
+		first, err1 := GetUserHomeDir()
+		require.NoError(t, err1)
+		second, err2 := GetUserHomeDir()
+		require.NoError(t, err2)
+		assert.Equal(t, first, second)
+	})
+}
+
+func TestResolveHomeDir(t *testing.T) {
+	t.Run("resolves without HOME set", func(t *testing.T) {
+		if _, err := user.Current(); err != nil {
+			t.Skip("skipping: os/user.Current() unavailable (minimal container without /etc/passwd)")
+		}
+
+		origHome := os.Getenv("HOME")
+		t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
+		require.NoError(t, os.Unsetenv("HOME"))
+
+		homeDir, err := resolveHomeDir()
+		require.NoError(t, err, "resolveHomeDir must succeed without $HOME via os/user.Current()")
+		assert.NotEmpty(t, homeDir)
+		assert.DirExists(t, homeDir)
+	})
+}
+
+func TestExpandTildePath(t *testing.T) {
+	t.Run("expands tilde prefix", func(t *testing.T) {
+		result, err := ExpandTildePath("~/models/bird.tflite")
+		require.NoError(t, err)
+		assert.NotContains(t, result, "~")
+		assert.True(t, filepath.IsAbs(result))
+		assert.True(t, strings.HasSuffix(result, filepath.Join("models", "bird.tflite")))
+	})
+
+	t.Run("returns non-tilde path unchanged", func(t *testing.T) {
+		result, err := ExpandTildePath("/usr/share/models/bird.tflite")
+		require.NoError(t, err)
+		assert.Equal(t, "/usr/share/models/bird.tflite", result)
+	})
+
+	t.Run("returns relative path unchanged", func(t *testing.T) {
+		result, err := ExpandTildePath("models/bird.tflite")
+		require.NoError(t, err)
+		assert.Equal(t, "models/bird.tflite", result)
+	})
+
+	t.Run("handles bare tilde", func(t *testing.T) {
+		result, err := ExpandTildePath("~")
+		require.NoError(t, err)
+		assert.NotEqual(t, "~", result)
+		assert.DirExists(t, result)
+	})
+
+	t.Run("returns empty path unchanged", func(t *testing.T) {
+		result, err := ExpandTildePath("")
+		require.NoError(t, err)
+		assert.Empty(t, result)
+	})
 }

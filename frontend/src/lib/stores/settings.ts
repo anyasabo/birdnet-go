@@ -91,6 +91,7 @@ export interface FalsePositiveFilterSettings {
 
 export interface RangeFilterSettings {
   threshold: number;
+  passUnmappedSpecies: boolean;
   speciesCount: number | null;
   species: string[];
 }
@@ -107,6 +108,20 @@ export interface RangeFilterSpeciesEntry {
 export interface RangeFilterSpeciesResult {
   count: number;
   species: RangeFilterSpeciesEntry[];
+}
+
+export interface BatSettings {
+  enabled: boolean;
+  threshold: number;
+  locale?: string;
+  filterEnabled: boolean;
+  nighttimeOnly: boolean;
+  falsePositiveFilter?: {
+    level: number;
+  };
+  ultrasonicFilter?: {
+    enabled: boolean;
+  };
 }
 
 export interface SQLiteSettings {
@@ -133,6 +148,7 @@ export interface AudioSourceConfig {
   name: string;
   device: string;
   gain: number;
+  sampleRate?: number; // capture sample rate in Hz; 0 or undefined means 48000
   models: string[]; // e.g. ["birdnet", "perch_v2"]
   equalizer?: EqualizerSettings;
   quietHours?: QuietHoursConfig;
@@ -198,6 +214,7 @@ export interface StreamConfig {
   enabled: boolean; // Materialized during settings coercion for backward compatibility
   type: StreamType; // Stream type: rtsp, http, hls, rtmp, udp
   transport?: 'tcp' | 'udp'; // Transport protocol (for RTSP/RTMP only)
+  models?: string[]; // Model IDs for this stream (e.g., ["birdnet", "perch_v2"])
   equalizer?: EqualizerSettings; // Per-stream EQ (undefined = use global)
   quietHours?: QuietHoursConfig; // Quiet hours configuration
 }
@@ -773,6 +790,7 @@ export interface SettingsFormData {
   systemId?: string;
   main: MainSettings;
   birdnet: BirdNetSettings;
+  bat?: BatSettings;
   input?: unknown; // Not exposed via JSON
   realtime?: RealtimeSettings;
   webServer?: WebServerSettings;
@@ -829,8 +847,18 @@ function createEmptySettings(): SettingsFormData {
       locationConfigured: false,
       rangeFilter: {
         threshold: 0.03,
+        passUnmappedSpecies: false,
         speciesCount: null,
         species: [],
+      },
+    },
+    bat: {
+      enabled: false,
+      threshold: 0.5,
+      filterEnabled: false,
+      nighttimeOnly: true,
+      ultrasonicFilter: {
+        enabled: true,
       },
     },
     realtime: {
@@ -1063,6 +1091,8 @@ export const settingsDataLoaded = derived(settingsStore, $store => $store.dataLo
 export const mainSettings = derived(settingsStore, $store => $store.formData.main);
 
 export const birdnetSettings = derived(settingsStore, $store => $store.formData.birdnet);
+
+export const batSettings = derived(settingsStore, $store => $store.formData.bat);
 
 export const realtimeSettings = derived(settingsStore, $store => $store.formData.realtime);
 

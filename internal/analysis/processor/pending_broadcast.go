@@ -23,20 +23,55 @@ const (
 	PendingStatusRejected PendingDetectionStatus = "rejected"
 )
 
+// SSEModelContribution describes one AI model's contribution to a pending detection.
+type SSEModelContribution struct {
+	ModelID       string  `json:"modelID"`
+	HitCount      int     `json:"hitCount"`
+	MaxConfidence float64 `json:"maxConfidence"`
+}
+
 // SSEPendingDetection is the lightweight DTO sent over SSE for pending detections.
 // It contains only the fields needed for the "currently hearing" dashboard card.
 type SSEPendingDetection struct {
-	Species         string                 `json:"species"`                   // Common name
-	ScientificName  string                 `json:"scientificName"`            // Scientific name
-	Thumbnail       string                 `json:"thumbnail"`                 // Bird image URL
-	Status          PendingDetectionStatus `json:"status"`                    // "active", "approved", "rejected"
-	FirstDetected   int64                  `json:"firstDetected"`             // Unix timestamp (seconds)
-	AudioCapturedAt int64                  `json:"audioCapturedAt,omitempty"` // Unix seconds when audio was captured (omitted if unavailable)
-	LastUpdated     int64                  `json:"lastUpdated"`               // Unix seconds — most recent inference hit
-	Source          string                 `json:"source"`                    // Source display name
-	SourceID        string                 `json:"sourceID"`                  // Raw source ID for client-side filtering
-	ModelID         string                 `json:"modelID,omitempty"`         // Classifier model that produced this detection
-	HitCount        int                    `json:"hitCount"`                  // Number of inference hits accumulated
+	Species            string                 `json:"species"`                      // Common name
+	ScientificName     string                 `json:"scientificName"`               // Scientific name
+	Thumbnail          string                 `json:"thumbnail"`                    // Bird image URL
+	Status             PendingDetectionStatus `json:"status"`                       // "active", "approved", "rejected"
+	FirstDetected      int64                  `json:"firstDetected"`                // Unix timestamp (seconds)
+	AudioCapturedAt    int64                  `json:"audioCapturedAt,omitempty"`    // Unix seconds when audio was captured
+	LastUpdated        int64                  `json:"lastUpdated"`                  // Unix seconds - most recent inference hit
+	Source             string                 `json:"source"`                       // Source display name
+	SourceID           string                 `json:"sourceID"`                     // Raw source ID for client-side filtering
+	BestModelID        string                 `json:"bestModelID,omitempty"`        // Model with highest confidence
+	HitCount           int                    `json:"hitCount"`                     // Total inference hits across all models
+	ModelContributions []SSEModelContribution `json:"modelContributions,omitempty"` // Per-model breakdown
+}
+
+// buildSSEModelContributions converts the internal ModelContributions map to a sorted SSE-friendly slice.
+// Returns nil when only one model contributed (the common single-model case);
+// consumers should use BestModelID and HitCount for single-model detections.
+func buildSSEModelContributions(contributions map[string]ModelContribution) []SSEModelContribution {
+	if len(contributions) <= 1 {
+		return nil
+	}
+	result := make([]SSEModelContribution, 0, len(contributions))
+	for modelID, contrib := range contributions {
+		result = append(result, SSEModelContribution{
+			ModelID:       modelID,
+			HitCount:      contrib.HitCount,
+			MaxConfidence: contrib.MaxConfidence,
+		})
+	}
+	slices.SortFunc(result, func(a, b SSEModelContribution) int {
+		if a.ModelID < b.ModelID {
+			return -1
+		}
+		if a.ModelID > b.ModelID {
+			return 1
+		}
+		return 0
+	})
+	return result
 }
 
 // unixOrZero returns t.Unix() if t is non-zero, or 0 otherwise.
@@ -50,7 +85,7 @@ func unixOrZero(t time.Time) int64 {
 }
 
 // sortPendingSnapshot sorts a pending detection snapshot by FirstDetected
-// (oldest first), with species name, source ID, and model ID as tie-breakers for determinism.
+// (oldest first), with species name, source ID, and best model ID as tie-breakers for determinism.
 // This ordering is required by pendingSnapshotChanged which does index-based comparison.
 func sortPendingSnapshot(s []SSEPendingDetection) {
 	slices.SortFunc(s, func(a, b SSEPendingDetection) int {
@@ -72,10 +107,10 @@ func sortPendingSnapshot(s []SSEPendingDetection) {
 		if a.SourceID > b.SourceID {
 			return 1
 		}
-		if a.ModelID < b.ModelID {
+		if a.BestModelID < b.BestModelID {
 			return -1
 		}
-		if a.ModelID > b.ModelID {
+		if a.BestModelID > b.BestModelID {
 			return 1
 		}
 		return 0
@@ -97,30 +132,21 @@ func CalculateVisibilityThreshold(minDetections int) int {
 
 // SnapshotVisiblePending returns all pending detections that have accumulated
 // enough hits to pass the visibility threshold. Results have status "active".
+// The visibility threshold is computed per-item using BestModelID so that bat
+// and bird models each use their own false positive filter configuration.
 // The caller must NOT hold pendingMutex.
-func (p *Processor) SnapshotVisiblePending(minDetections int) []SSEPendingDetection {
-	threshold := CalculateVisibilityThreshold(minDetections)
+func (p *Processor) SnapshotVisiblePending() []SSEPendingDetection {
+	settings := p.currentSettings()
+	visThresholds := precomputeVisibilityThresholds(settings)
 
 	p.pendingMutex.RLock()
 	result := make([]SSEPendingDetection, 0, len(p.pendingDetections))
 	for key := range p.pendingDetections {
 		item := p.pendingDetections[key]
-		if item.Count < threshold {
+		if item.Count < visThresholds.getThreshold(item.BestModelID) {
 			continue
 		}
-		result = append(result, SSEPendingDetection{
-			Species:         item.Detection.Result.Species.CommonName,
-			ScientificName:  item.Detection.Result.Species.ScientificName,
-			Thumbnail:       p.getThumbnailURL(item.Detection.Result.Species.ScientificName),
-			Status:          PendingStatusActive,
-			FirstDetected:   item.CreatedAt.Unix(),
-			AudioCapturedAt: unixOrZero(item.AudioCapturedAt),
-			LastUpdated:     item.LastUpdated.Unix(),
-			Source:          p.getDisplayNameForSource(item.Source),
-			SourceID:        item.Source,
-			ModelID:         item.ModelID,
-			HitCount:        item.Count,
-		})
+		result = append(result, p.buildPendingDTO(&item, PendingStatusActive))
 	}
 	p.pendingMutex.RUnlock()
 
@@ -171,22 +197,29 @@ func (p *Processor) broadcastPendingSnapshot(snapshot []SSEPendingDetection) {
 	broadcaster(snapshot)
 }
 
+// buildPendingDTO creates an SSEPendingDetection DTO from a PendingDetection.
+// Used for active snapshots, flush notifications, and terminal status broadcasts.
+func (p *Processor) buildPendingDTO(item *PendingDetection, status PendingDetectionStatus) SSEPendingDetection {
+	return SSEPendingDetection{
+		Species:            item.Detection.Result.Species.CommonName,
+		ScientificName:     item.Detection.Result.Species.ScientificName,
+		Thumbnail:          p.getThumbnailURL(item.Detection.Result.Species.ScientificName),
+		Status:             status,
+		FirstDetected:      item.CreatedAt.Unix(),
+		AudioCapturedAt:    unixOrZero(item.AudioCapturedAt),
+		LastUpdated:        item.LastUpdated.Unix(),
+		Source:             p.getDisplayNameForSource(item.Source),
+		SourceID:           item.Source,
+		BestModelID:        item.BestModelID,
+		HitCount:           item.Count,
+		ModelContributions: buildSSEModelContributions(item.ModelContributions),
+	}
+}
+
 // buildFlushNotification creates an SSEPendingDetection with terminal status
 // for a detection that has been flushed (approved or rejected).
 func (p *Processor) buildFlushNotification(item *PendingDetection, status PendingDetectionStatus) SSEPendingDetection {
-	return SSEPendingDetection{
-		Species:         item.Detection.Result.Species.CommonName,
-		ScientificName:  item.Detection.Result.Species.ScientificName,
-		Thumbnail:       p.getThumbnailURL(item.Detection.Result.Species.ScientificName),
-		Status:          status,
-		FirstDetected:   item.CreatedAt.Unix(),
-		AudioCapturedAt: unixOrZero(item.AudioCapturedAt),
-		LastUpdated:     item.LastUpdated.Unix(),
-		Source:          p.getDisplayNameForSource(item.Source),
-		SourceID:        item.Source,
-		ModelID:         item.ModelID,
-		HitCount:        item.Count,
-	}
+	return p.buildPendingDTO(item, status)
 }
 
 // pendingSnapshotChanged reports whether two sorted pending snapshots differ
@@ -198,7 +231,7 @@ func pendingSnapshotChanged(prev, curr []SSEPendingDetection) bool {
 	for i := range prev {
 		if prev[i].Species != curr[i].Species ||
 			prev[i].SourceID != curr[i].SourceID ||
-			prev[i].ModelID != curr[i].ModelID ||
+			prev[i].BestModelID != curr[i].BestModelID ||
 			prev[i].HitCount != curr[i].HitCount ||
 			prev[i].Status != curr[i].Status ||
 			prev[i].LastUpdated != curr[i].LastUpdated {

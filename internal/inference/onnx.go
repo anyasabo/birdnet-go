@@ -1,9 +1,10 @@
-//go:build onnx
-
 package inference
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 
 	ort "github.com/tphakala/birdnet-go/internal/inference/onnx"
@@ -15,12 +16,23 @@ var (
 	ortInitialized bool
 )
 
+// IsORTInitialized reports whether the ONNX Runtime has been successfully initialized. Thread-safe.
+func IsORTInitialized() bool {
+	ortInitMu.Lock()
+	defer ortInitMu.Unlock()
+	return ortInitialized
+}
+
 // ONNXClassifierOptions configures the ONNX species classifier.
 type ONNXClassifierOptions struct {
 	// Labels is the species label list. Required.
 	Labels []string
 	// Threads is the number of CPU threads for ONNX inference. 0 = use ONNX defaults.
 	Threads int
+	// SkipLabelValidation disables the label-count-vs-model-output check.
+	// Use when the model is loaded only for embedding extraction and the
+	// caller's label list may not match the model's logits dimension.
+	SkipLabelValidation bool
 }
 
 // onnxClassifier implements Classifier using an ONNX Runtime session.
@@ -41,18 +53,22 @@ func NewONNXClassifier(modelPath string, opts ONNXClassifierOptions) (Classifier
 		ort.WithTopK(0),          // We handle topK in BirdNET-Go's post-processing
 		ort.WithMinConfidence(0), // No filtering, return all raw scores
 	}
-	var configErr error
-	if opts.Threads > 0 {
-		threads := opts.Threads
-		classifierOpts = append(classifierOpts, ort.WithSessionOptions(func(so *ortlib.SessionOptions) {
-			if err := so.SetIntraOpNumThreads(threads); err != nil && configErr == nil {
-				configErr = fmt.Errorf("failed to set IntraOpNumThreads to %d: %w", threads, err)
-			}
-			if err := so.SetInterOpNumThreads(threads); err != nil && configErr == nil {
-				configErr = fmt.Errorf("failed to set InterOpNumThreads to %d: %w", threads, err)
-			}
-		}))
+	if opts.SkipLabelValidation {
+		classifierOpts = append(classifierOpts, ort.WithSkipLabelValidation())
 	}
+	threads := opts.Threads
+	if threads <= 0 {
+		threads = runtime.NumCPU()
+	}
+	var configErr error
+	classifierOpts = append(classifierOpts, ort.WithSessionOptions(func(so *ortlib.SessionOptions) {
+		if err := so.SetIntraOpNumThreads(threads); err != nil && configErr == nil {
+			configErr = fmt.Errorf("failed to set IntraOpNumThreads to %d: %w", threads, err)
+		}
+		if err := so.SetInterOpNumThreads(threads); err != nil && configErr == nil {
+			configErr = fmt.Errorf("failed to set InterOpNumThreads to %d: %w", threads, err)
+		}
+	}))
 	classifier, err := ort.NewClassifier(modelPath, classifierOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ONNX classifier: %w", err)
@@ -70,7 +86,18 @@ func NewONNXClassifier(modelPath string, opts ONNXClassifierOptions) (Classifier
 
 // Predict runs ONNX inference, returning raw logits (pre-activation).
 func (c *onnxClassifier) Predict(samples []float32) ([]float32, error) {
+	if c.classifier == nil {
+		return nil, ort.ErrSessionClosed
+	}
 	return c.classifier.PredictRaw(samples)
+}
+
+// PredictWithEmbeddings runs ONNX inference, returning both raw logits and embedding vector.
+func (c *onnxClassifier) PredictWithEmbeddings(samples []float32) (logits, embeddings []float32, err error) {
+	if c.classifier == nil {
+		return nil, nil, ort.ErrSessionClosed
+	}
+	return c.classifier.PredictRawWithEmbeddings(samples)
 }
 
 // NumSpecies returns the number of species in the model output.
@@ -86,20 +113,107 @@ func (c *onnxClassifier) Close() {
 	}
 }
 
+// ONNXCustomClassifierOptions configures the ONNX custom classifier.
+type ONNXCustomClassifierOptions struct {
+	Labels     []string // Provide labels directly (takes priority over LabelsPath)
+	LabelsPath string   // Load labels from file (text, CSV, or JSON)
+	Threads    int
+}
+
+type onnxCustomClassifier struct {
+	classifier *ort.CustomClassifier
+}
+
+// NewONNXCustomClassifier creates a CustomClassifier backed by an ONNX Runtime model.
+func NewONNXCustomClassifier(modelPath string, opts ONNXCustomClassifierOptions) (CustomClassifier, error) {
+	builder := ort.NewCustomClassifierBuilder().
+		ModelPath(modelPath).
+		TopK(0).
+		MinConfidence(0)
+
+	switch {
+	case len(opts.Labels) > 0:
+		builder = builder.Labels(opts.Labels)
+	case opts.LabelsPath != "":
+		builder = builder.LabelsPath(opts.LabelsPath)
+	default:
+		return nil, fmt.Errorf("ONNX custom classifier requires labels or labels path")
+	}
+
+	threads := opts.Threads
+	if threads <= 0 {
+		threads = runtime.NumCPU()
+	}
+	var configErr error
+	builder = builder.SessionOptions(func(so *ortlib.SessionOptions) {
+		if err := so.SetIntraOpNumThreads(threads); err != nil && configErr == nil {
+			configErr = fmt.Errorf("failed to set IntraOpNumThreads to %d: %w", threads, err)
+		}
+		if err := so.SetInterOpNumThreads(threads); err != nil && configErr == nil {
+			configErr = fmt.Errorf("failed to set InterOpNumThreads to %d: %w", threads, err)
+		}
+	})
+
+	cc, err := builder.Build()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ONNX custom classifier: %w", err)
+	}
+	if configErr != nil {
+		_ = cc.Close()
+		return nil, fmt.Errorf("failed to configure ONNX custom classifier session: %w", configErr)
+	}
+
+	return &onnxCustomClassifier{
+		classifier: cc,
+	}, nil
+}
+
+// PredictEmbedding runs inference on an embedding vector.
+func (c *onnxCustomClassifier) PredictEmbedding(embeddings []float32) ([]float32, error) {
+	if c.classifier == nil {
+		return nil, ort.ErrSessionClosed
+	}
+	return c.classifier.PredictRaw(embeddings)
+}
+
+// NumClasses returns the number of output classes.
+func (c *onnxCustomClassifier) NumClasses() int {
+	if c.classifier == nil {
+		return 0
+	}
+	return c.classifier.NumClasses()
+}
+
+// Labels returns the classification labels.
+func (c *onnxCustomClassifier) Labels() []string {
+	if c.classifier == nil {
+		return nil
+	}
+	return c.classifier.Labels()
+}
+
+// Close releases the ONNX custom classifier session.
+func (c *onnxCustomClassifier) Close() {
+	if c.classifier != nil {
+		_ = c.classifier.Close()
+		c.classifier = nil
+	}
+}
+
 // ONNXRangeFilterOptions configures the ONNX range filter.
 type ONNXRangeFilterOptions struct {
 	// Labels is the species label list. Required.
 	Labels []string
 }
 
-// onnxRangeFilter implements RangeFilter using an ONNX Runtime session.
+// onnxRangeFilter implements BatchRangeFilter using an ONNX Runtime session.
 type onnxRangeFilter struct {
 	filter     *ort.RangeFilter
 	numSpecies int
 }
 
-// NewONNXRangeFilter creates a RangeFilter backed by an ONNX Runtime meta model.
-func NewONNXRangeFilter(modelPath string, opts ONNXRangeFilterOptions) (RangeFilter, error) {
+// NewONNXRangeFilter creates a BatchRangeFilter backed by an ONNX Runtime meta model.
+func NewONNXRangeFilter(modelPath string, opts ONNXRangeFilterOptions) (BatchRangeFilter, error) {
 	if len(opts.Labels) == 0 {
 		return nil, fmt.Errorf("ONNX range filter requires labels")
 	}
@@ -119,7 +233,20 @@ func NewONNXRangeFilter(modelPath string, opts ONNXRangeFilterOptions) (RangeFil
 
 // Predict returns species occurrence scores for a geographic location and week.
 func (r *onnxRangeFilter) Predict(latitude, longitude, week float32) ([]float32, error) {
+	if r.filter == nil {
+		return nil, ort.ErrSessionClosed
+	}
 	return r.filter.PredictRaw(latitude, longitude, week)
+}
+
+// PredictBatch runs batch inference on multiple location/week inputs.
+// inputs is a flat slice of [lat, lon, week] triples: len(inputs) must equal batchSize * 3.
+// Returns a flat slice of [batchSize * numSpecies] scores in row-major order.
+func (r *onnxRangeFilter) PredictBatch(inputs []float32, batchSize int) ([]float32, error) {
+	if r.filter == nil {
+		return nil, ort.ErrSessionClosed
+	}
+	return r.filter.PredictBatchRaw(inputs, batchSize)
 }
 
 // NumSpecies returns the number of species in the range filter model output.
@@ -136,7 +263,9 @@ func (r *onnxRangeFilter) Close() {
 }
 
 // InitONNXRuntime initializes the ONNX Runtime with the given shared library path.
-// Safe to call multiple times — skips if already initialized successfully.
+// When libraryPath is empty, searches standard system library paths for
+// libonnxruntime.so (Linux) or onnxruntime.dll (Windows).
+// Safe to call multiple times; skips if already initialized successfully.
 // On failure, allows retry with a corrected path (supports hot-reload recovery).
 func InitONNXRuntime(libraryPath string) (err error) {
 	ortInitMu.Lock()
@@ -146,9 +275,13 @@ func InitONNXRuntime(libraryPath string) (err error) {
 		return nil
 	}
 
+	if libraryPath == "" {
+		libraryPath = findONNXRuntimeLibrary()
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("failed to initialize ONNX Runtime: %v", r)
+			err = fmt.Errorf("failed to initialize ONNX Runtime: %v; install guide: %s", r, ORTInstallGuideURL)
 		}
 	}()
 
@@ -157,11 +290,53 @@ func InitONNXRuntime(libraryPath string) (err error) {
 	return nil
 }
 
+// findONNXRuntimeLibrary searches standard system paths for the ONNX Runtime
+// shared library. Returns the first path found, or "onnxruntime" as a
+// fallback for dlopen's default search.
+func findONNXRuntimeLibrary() string {
+	var candidates []string
+	switch runtime.GOOS {
+	case "windows":
+		candidates = []string{"onnxruntime.dll"}
+		if exePath, err := os.Executable(); err == nil {
+			candidates = append([]string{filepath.Join(filepath.Dir(exePath), "onnxruntime.dll")}, candidates...)
+		}
+		for i, c := range candidates {
+			if abs, err := filepath.Abs(c); err == nil {
+				candidates[i] = abs
+			}
+		}
+	case "darwin":
+		candidates = []string{
+			"/opt/homebrew/lib/libonnxruntime.dylib",
+			"/usr/local/lib/libonnxruntime.dylib",
+			"libonnxruntime.dylib",
+		}
+	default:
+		candidates = []string{
+			"/usr/lib/libonnxruntime.so",
+			"/usr/local/lib/libonnxruntime.so",
+			"/usr/lib/aarch64-linux-gnu/libonnxruntime.so",
+			"/usr/lib/x86_64-linux-gnu/libonnxruntime.so",
+			"libonnxruntime.so",
+		}
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	if runtime.GOOS == "darwin" {
+		return "libonnxruntime.dylib"
+	}
+	return "onnxruntime"
+}
+
 // DestroyONNXRuntime tears down the ONNX Runtime environment.
 // Resets initialization state so InitONNXRuntime can be called again.
 func DestroyONNXRuntime() error {
 	ortInitMu.Lock()
+	defer ortInitMu.Unlock()
 	ortInitialized = false
-	ortInitMu.Unlock()
 	return ort.DestroyORT()
 }

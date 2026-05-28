@@ -72,3 +72,124 @@ func TestCounters_ConcurrentAccess(t *testing.T) {
 	snap := c.Snapshot()
 	assert.Equal(t, int64(goroutines*iterations), snap.InvokeCount)
 }
+
+func TestCounterMap_RecordInvoke(t *testing.T) {
+	t.Parallel()
+	m := &CounterMap{}
+
+	m.RecordInvoke("model_a", 500)
+	m.RecordInvoke("model_a", 1200)
+	m.RecordInvoke("model_b", 300)
+
+	snaps := m.SnapshotAll()
+	require.Len(t, snaps, 2)
+
+	a := snaps["model_a"]
+	assert.Equal(t, int64(2), a.InvokeCount)
+	assert.Equal(t, int64(1700), a.InvokeTotalUs)
+	assert.Equal(t, int64(1200), a.InvokeMaxUs)
+
+	b := snaps["model_b"]
+	assert.Equal(t, int64(1), b.InvokeCount)
+	assert.Equal(t, int64(300), b.InvokeTotalUs)
+}
+
+func TestCounterMap_SnapshotAll_ResetsMax(t *testing.T) {
+	t.Parallel()
+	m := &CounterMap{}
+
+	m.RecordInvoke("model_a", 5000)
+	snap1 := m.SnapshotAll()
+	assert.Equal(t, int64(5000), snap1["model_a"].InvokeMaxUs)
+
+	snap2 := m.SnapshotAll()
+	assert.Equal(t, int64(0), snap2["model_a"].InvokeMaxUs)
+	assert.Equal(t, int64(1), snap2["model_a"].InvokeCount)
+	assert.Equal(t, int64(5000), snap2["model_a"].InvokeTotalUs)
+}
+
+func TestCounterMap_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+	m := &CounterMap{}
+
+	const goroutines = 10
+	const iterations = 1000
+	models := []string{"model_a", "model_b", "model_c"}
+
+	var wg sync.WaitGroup
+	for _, modelID := range models {
+		for range goroutines {
+			wg.Go(func() {
+				for range iterations {
+					m.RecordInvoke(modelID, 100)
+				}
+			})
+		}
+	}
+	wg.Wait()
+
+	snaps := m.SnapshotAll()
+	require.Len(t, snaps, 3)
+	for _, modelID := range models {
+		assert.Equal(t, int64(goroutines*iterations), snaps[modelID].InvokeCount)
+	}
+}
+
+func TestCounterMap_EmptySnapshot(t *testing.T) {
+	t.Parallel()
+	m := &CounterMap{}
+	snaps := m.SnapshotAll()
+	assert.Empty(t, snaps)
+}
+
+func TestCounterMap_PeekAll_NonDestructive(t *testing.T) {
+	t.Parallel()
+	m := &CounterMap{}
+
+	m.RecordInvoke("model_a", 500)
+	m.RecordInvoke("model_a", 1200)
+	m.RecordInvoke("model_b", 300)
+
+	peek1 := m.PeekAll()
+	require.Len(t, peek1, 2)
+
+	a := peek1["model_a"]
+	assert.Equal(t, int64(2), a.InvokeCount)
+	assert.Equal(t, int64(1700), a.InvokeTotalUs)
+	assert.Equal(t, int64(1200), a.InvokeMaxUs)
+
+	b := peek1["model_b"]
+	assert.Equal(t, int64(1), b.InvokeCount)
+	assert.Equal(t, int64(300), b.InvokeTotalUs)
+	assert.Equal(t, int64(300), b.InvokeMaxUs)
+
+	// PeekAll must NOT reset InvokeMaxUs
+	peek2 := m.PeekAll()
+	assert.Equal(t, int64(1200), peek2["model_a"].InvokeMaxUs)
+	assert.Equal(t, int64(300), peek2["model_b"].InvokeMaxUs)
+}
+
+func TestCounterMap_PeekAll_Empty(t *testing.T) {
+	t.Parallel()
+	m := &CounterMap{}
+	peek := m.PeekAll()
+	assert.Empty(t, peek)
+}
+
+func TestCounterMap_PeekAll_DoesNotInterfereWithSnapshot(t *testing.T) {
+	t.Parallel()
+	m := &CounterMap{}
+
+	m.RecordInvoke("model_a", 1000)
+
+	// PeekAll should not affect subsequent SnapshotAll
+	peek := m.PeekAll()
+	assert.Equal(t, int64(1000), peek["model_a"].InvokeMaxUs)
+
+	snap := m.SnapshotAll()
+	assert.Equal(t, int64(1000), snap["model_a"].InvokeMaxUs)
+
+	// After SnapshotAll resets max, PeekAll should see zero
+	peek2 := m.PeekAll()
+	assert.Equal(t, int64(0), peek2["model_a"].InvokeMaxUs)
+}

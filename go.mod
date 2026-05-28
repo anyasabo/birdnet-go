@@ -7,7 +7,7 @@ require (
 	github.com/antonholmquist/jason v1.0.0
 	github.com/creack/pty v1.1.24
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/gen2brain/malgo v0.11.24
+	github.com/gen2brain/malgo v0.11.25
 	github.com/getsentry/sentry-go v0.46.2
 	github.com/go-audio/audio v1.0.0
 	github.com/go-audio/wav v1.1.0
@@ -18,13 +18,13 @@ require (
 	github.com/k3a/html2text v1.4.0
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/labstack/echo/v4 v4.15.2
-	github.com/nicholas-fedor/shoutrrr v0.14.3
+	github.com/nicholas-fedor/shoutrrr v0.15.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pkg/sftp v1.13.10
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
-	github.com/ringsaturn/tzf v1.2.0
+	github.com/ringsaturn/tzf v1.2.1
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/sj14/astral v0.2.2
 	github.com/smallnest/ringbuffer v0.1.1
@@ -35,14 +35,14 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/mysql v0.42.0
 	github.com/tphakala/flac v0.0.0-20241217200312-20d6d98f5ee3
 	github.com/tphakala/go-audio-resampler v1.3.0
-	github.com/tphakala/go-tflite v0.2.2-0.20260403122459-aedbd0bca261
+	github.com/tphakala/go-tflite v0.2.2-0.20260514101223-29408e53fff7
 	github.com/tphakala/simd v1.0.22
-	github.com/yalue/onnxruntime_go v1.30.0
+	github.com/yalue/onnxruntime_go v1.30.1
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.50.0
-	golang.org/x/net v0.53.0
-	golang.org/x/text v0.36.0
-	google.golang.org/api v0.277.0
+	golang.org/x/crypto v0.52.0
+	golang.org/x/net v0.55.0
+	golang.org/x/text v0.37.0
+	google.golang.org/api v0.280.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/sqlite v1.6.0
@@ -111,10 +111,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/term v0.42.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260427160629-7cedc36a6bc4 // indirect
-	google.golang.org/grpc v1.81.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60 // indirect
+	google.golang.org/grpc v1.81.1 // indirect
 )
 
 require (
@@ -155,9 +155,11 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/sys v0.45.0
 	golang.org/x/time v0.15.0
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/markbates/goth => github.com/tphakala/goth v0.0.0-20260315123917-08c3db6a364a
+
+replace github.com/gen2brain/malgo => github.com/tphakala/malgo v0.11.25-birdnet.1

@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	"github.com/tphakala/birdnet-go/internal/detection"
 	"github.com/tphakala/birdnet-go/internal/errors"
@@ -314,12 +315,26 @@ func (m *mockStore) DeleteExpiredNotificationHistory(before time.Time) (int64, e
 
 func (m *mockStore) SchemaVersion() string     { return datastore.SchemaVersionLegacy }
 func (m *mockStore) UpdateNameMaps(_ []string) {}
-func (m *mockStore) GetDatabaseStats() (*datastore.DatabaseStats, error) {
+func (m *mockStore) GetDatabaseStats(_ context.Context) (*datastore.DatabaseStats, error) {
 	return &datastore.DatabaseStats{
 		Type:      "mock",
 		Connected: true,
 	}, nil
 }
+func (m *mockStore) PingWithLatency(_ context.Context) (time.Duration, error) { return 0, nil }
+func (m *mockStore) CountDetectionsSince(_ context.Context, _ time.Time) (int, error) {
+	return 0, nil
+}
+func (m *mockStore) SaveAppEvent(_ context.Context, _, _, _ string, _ map[string]any) error {
+	return nil
+}
+func (m *mockStore) GetRecentAppEvents(_ context.Context, _ int) ([]datastore.AppEvent, error) {
+	return nil, nil
+}
+func (m *mockStore) GetAppEventsSince(_ context.Context, _ time.Time, _ int) ([]datastore.AppEvent, error) {
+	return nil, nil
+}
+func (m *mockStore) PruneAppEvents(_ context.Context, _ int) (int64, error) { return 0, nil }
 
 func (m *mockStore) GetAllDailyEvents() ([]datastore.DailyEvents, error) {
 	return nil, nil
@@ -1017,6 +1032,8 @@ func (m *mockProviderWithContext) FetchWithContext(ctx context.Context, scientif
 
 // TestMain provides goleak verification to detect goroutine leaks
 func TestMain(m *testing.M) {
+	conf.NewTestSettings().Apply()
+
 	goleak.VerifyTestMain(m,
 		goleak.IgnoreTopFunction("testing.(*T).Run"),
 		goleak.IgnoreTopFunction("runtime.gopark"),

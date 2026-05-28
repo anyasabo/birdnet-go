@@ -20,6 +20,7 @@ import (
 	"github.com/tphakala/birdnet-go/internal/audiocore"
 	"github.com/tphakala/birdnet-go/internal/audiocore/buffer"
 	"github.com/tphakala/birdnet-go/internal/audiocore/convert"
+	"github.com/tphakala/birdnet-go/internal/audiocore/ultrasonic"
 	"github.com/tphakala/birdnet-go/internal/birdweather"
 	"github.com/tphakala/birdnet-go/internal/classifier"
 	"github.com/tphakala/birdnet-go/internal/conf"
@@ -83,7 +84,6 @@ type Processor struct {
 	pendingResetAll      bool                // True if a full reset is pending, protected by thresholdsMutex
 	pendingDetections    map[string]PendingDetection
 	pendingMutex         sync.RWMutex // RWMutex to protect access to pendingDetections (RLock for snapshots)
-	lastDogDetectionLog  map[string]time.Time
 	dogDetectionMutex    sync.Mutex
 	detectionMutex       sync.RWMutex // Mutex to protect LastDogDetection and LastHumanDetection maps
 	controlChan          chan string
@@ -129,7 +129,11 @@ type Processor struct {
 	backupMutex     sync.RWMutex
 
 	// Log deduplication (extracted to separate type for SRP)
-	logDedup *LogDeduplicator // Handles log deduplication logic
+	logDedupMu sync.RWMutex
+	logDedup   *LogDeduplicator
+
+	// Periodic pipeline stats (inference activity per source/model)
+	pipelineStats *PipelineStats
 
 	// Extended capture fields
 	extendedCaptureSpecies map[string]bool // Resolved set of scientific names eligible for extended capture
@@ -190,27 +194,35 @@ type Detections struct {
 
 // PendingDetection struct represents a single detection held in memory,
 // including its last updated timestamp and a deadline for flushing it to the worker queue.
+// ModelContribution tracks a single AI model's detection activity for a pending detection.
+type ModelContribution struct {
+	HitCount      int       // Number of times this model detected the species
+	MaxConfidence float64   // Highest confidence seen from this model
+	LastHitAt     time.Time // When this model last detected the species
+}
+
 type PendingDetection struct {
-	Detection       Detections // The detection data
-	Confidence      float64    // Confidence level of the detection
+	Detection       Detections // The detection data (from the best-confidence model)
+	Confidence      float64    // Best confidence seen across all models
 	Source          string     // Audio source of the detection, RTSP URL or audio card name
-	ModelID         string     // Identifies which classifier model produced this detection
+	BestModelID     string     // Model that produced the highest confidence detection
 	FirstDetected   time.Time  // Back-dated time for audio clip extraction (startTime from analysis buffer)
 	CreatedAt       time.Time  // Real wall-clock time when detection was first created (for display)
 	AudioCapturedAt time.Time  // Wall-clock time when the most recent audio chunk was captured (updated on each hit; for spectrogram overlay)
 	LastUpdated     time.Time  // Last time this detection was updated
 	FlushDeadline   time.Time  // Deadline by which the detection must be processed
-	Count           int        // Number of times this detection has been updated
+	Count           int        // Total detection count across all models
 	ExtendedCapture bool       // Whether this detection uses extended capture
 	MaxDeadline     time.Time  // Absolute max flush time (FirstDetected + maxDuration)
+
+	ModelContributions map[string]ModelContribution // Per-model detection data, keyed by model ID
 }
 
-// pendingDetectionKey creates a composite key for the pendingDetections map
-// that includes the source ID and model ID to prevent cross-source and
-// cross-model data corruption when multiple audio sources or models detect
-// the same species concurrently.
-func pendingDetectionKey(sourceID, speciesName, modelID string) string {
-	return sourceID + ":" + speciesName + ":" + modelID
+// pendingDetectionKey creates a composite key for the pendingDetections map.
+// Detections from different models for the same species on the same source are
+// merged into a single entry for cross-model consensus evaluation.
+func pendingDetectionKey(sourceID, speciesName string) string {
+	return sourceID + ":" + speciesName
 }
 
 // suggestLevelForDisabledFilter provides smart recommendations for filter levels
@@ -327,6 +339,31 @@ func validateAndLogFilterConfig(settings *conf.Settings) {
 		validateOverlapForLevel(level, overlap, minOverlap, minDetections)
 		warnAboutHardwareRequirements(level, overlap)
 	}
+}
+
+// validateAndLogBatFilterConfig validates the bat false positive filter configuration
+// and logs the effective minDetections. The bat model uses a fixed 50% overlap,
+// so there are no overlap-related warnings.
+func validateAndLogBatFilterConfig(settings *conf.Settings) {
+	if err := settings.Bat.FalsePositiveFilter.Validate(); err != nil {
+		GetLogger().Error("Invalid bat false positive filter configuration, falling back to level 0",
+			logger.Error(err),
+			logger.Int("fallback_level", 0),
+			logger.String("operation", "bat_false_positive_filter_validation"))
+		settings.Bat.FalsePositiveFilter.Level = 0
+	}
+
+	level := settings.Bat.FalsePositiveFilter.Level
+	if level == 0 {
+		return
+	}
+
+	minDetections := calculateBatMinDetections(settings)
+	GetLogger().Info("Bat false positive filter active",
+		logger.Int("level", level),
+		logger.String("level_name", getLevelName(level)),
+		logger.Int("min_detections", minDetections),
+		logger.String("operation", "bat_false_positive_filter_config"))
 }
 
 // initLogDeduplicator creates and configures the log deduplicator.
@@ -449,19 +486,21 @@ func New(settings *conf.Settings, ds datastore.Interface, bn *classifier.Orchest
 			time.Duration(settings.Realtime.Interval)*time.Second,
 			settings.Realtime.Species.Config,
 		),
-		Metrics:             metrics,
-		LastDogDetection:    make(map[string]time.Time),
-		LastHumanDetection:  make(map[string]time.Time),
-		DynamicThresholds:   make(map[string]*DynamicThreshold),
-		pendingResets:       make(map[string]struct{}),
-		pendingDetections:   make(map[string]PendingDetection),
-		lastDogDetectionLog: make(map[string]time.Time),
-		controlChan:         make(chan string, 10),  // Buffered channel to prevent blocking
-		JobQueue:            jobqueue.NewJobQueue(), // Initialize the job queue
+		Metrics:            metrics,
+		LastDogDetection:   make(map[string]time.Time),
+		LastHumanDetection: make(map[string]time.Time),
+		DynamicThresholds:  make(map[string]*DynamicThreshold),
+		pendingResets:      make(map[string]struct{}),
+		pendingDetections:  make(map[string]PendingDetection),
+		controlChan:        make(chan string, 10),  // Buffered channel to prevent blocking
+		JobQueue:           jobqueue.NewJobQueue(), // Initialize the job queue
 	}
 
 	// Initialize log deduplicator with configuration from settings
 	p.logDedup = initLogDeduplicator(settings)
+
+	// Initialize pipeline stats for periodic inference summaries
+	p.pipelineStats = NewPipelineStats(p.getDisplayNameForSource)
 
 	// Validate detection window configuration
 	captureLength := time.Duration(settings.Realtime.Audio.Export.Length) * time.Second
@@ -503,6 +542,7 @@ func New(settings *conf.Settings, ds datastore.Interface, bn *classifier.Orchest
 
 	// Validate and log false positive filter configuration
 	validateAndLogFilterConfig(settings)
+	validateAndLogBatFilterConfig(settings)
 
 	// Validate user-configured custom ExecuteCommand action paths up front
 	// so that a misconfigured command path produces a single user-facing
@@ -584,6 +624,10 @@ func (p *Processor) Start() {
 
 		p.flusherCtx, p.flusherCancel = context.WithCancel(context.Background())
 		p.pendingDetectionsFlusher()
+
+		if p.pipelineStats != nil {
+			p.pipelineStats.Start()
+		}
 	})
 }
 
@@ -611,7 +655,7 @@ func (p *Processor) startDetectionProcessor() {
 func (p *Processor) processDetections(item classifier.Results) {
 	// Add structured logging for detection pipeline entry
 	GetLogger().Debug("Processing detections from queue",
-		logger.String("source", item.Source.DisplayName),
+		logger.String("source", p.getDisplayNameForSource(item.Source.ID)),
 		logger.String("model_id", item.ModelID),
 		logger.Time("start_time", item.StartTime),
 		logger.Int("results_count", len(item.Results)),
@@ -638,6 +682,21 @@ func (p *Processor) processDetections(item classifier.Results) {
 	// Log processing results with deduplication to prevent spam
 	p.logDetectionResults(item.Source.ID, len(item.Results), len(detectionResults))
 
+	// Record periodic pipeline stats
+	if p.pipelineStats != nil {
+		var maxConf float32
+		for _, r := range item.Results {
+			if r.Confidence > maxConf {
+				maxConf = r.Confidence
+			}
+		}
+		threshold := float32(settings.BirdNET.Threshold)
+		if item.ModelID == classifier.RegistryIDBat {
+			threshold = float32(settings.Bat.Threshold)
+		}
+		p.pipelineStats.RecordInference(item.Source.ID, item.ModelID, len(item.Results), len(detectionResults), maxConf, threshold)
+	}
+
 	for i := range detectionResults {
 		det := detectionResults[i]
 		commonName := strings.ToLower(det.Result.Species.CommonName)
@@ -647,34 +706,46 @@ func (p *Processor) processDetections(item classifier.Results) {
 		p.pendingMutex.Lock()
 
 		now := time.Now()
-		mapKey := pendingDetectionKey(item.Source.ID, commonName, item.ModelID)
+		mapKey := pendingDetectionKey(item.Source.ID, commonName)
 
 		if existing, exists := p.pendingDetections[mapKey]; exists {
-			// Update the existing detection if it's already in pendingDetections map
+			// Update the existing detection (may be from same or different model)
 			oldConfidence := existing.Confidence
 			existing.LastUpdated = now
 			existing.AudioCapturedAt = item.AudioCapturedAt
 			if confidence > existing.Confidence {
 				existing.Detection = det
 				existing.Confidence = confidence
+				existing.BestModelID = item.ModelID
 				existing.Source = item.Source.ID
-				// Add structured logging for confidence update
 				GetLogger().Debug("Updated pending detection with higher confidence",
 					logger.String("species", commonName),
+					logger.String("model_id", item.ModelID),
 					logger.Float64("old_confidence", oldConfidence),
 					logger.Float64("new_confidence", confidence),
 					logger.Int("count", existing.Count+1),
 					logger.String("operation", "update_pending_detection"))
 			}
 			existing.Count++
+
+			// Track per-model contribution
+			if existing.ModelContributions == nil {
+				existing.ModelContributions = make(map[string]ModelContribution, 1)
+			}
+			contrib := existing.ModelContributions[item.ModelID]
+			contrib.HitCount++
+			if confidence > contrib.MaxConfidence {
+				contrib.MaxConfidence = confidence
+			}
+			contrib.LastHitAt = now
+			existing.ModelContributions[item.ModelID] = contrib
+
 			p.pendingDetections[mapKey] = existing
 		} else {
-			// Create a new pending detection if it doesn't exist
-			// Add structured logging for new pending detection
 			GetLogger().Info("Created new pending detection",
 				logger.String("species", commonName),
 				logger.Float64("confidence", confidence),
-				logger.String("source", item.Source.DisplayName),
+				logger.String("source", p.getDisplayNameForSource(item.Source.ID)),
 				logger.String("model_id", item.ModelID),
 				logger.Time("flush_deadline", now.Add(detectionWindow)),
 				logger.String("operation", "create_pending_detection"))
@@ -682,7 +753,7 @@ func (p *Processor) processDetections(item classifier.Results) {
 				Detection:       det,
 				Confidence:      confidence,
 				Source:          item.Source.ID,
-				ModelID:         item.ModelID,
+				BestModelID:     item.ModelID,
 				FirstDetected:   item.StartTime,
 				CreatedAt:       now,
 				AudioCapturedAt: item.AudioCapturedAt,
@@ -691,6 +762,13 @@ func (p *Processor) processDetections(item classifier.Results) {
 				// startTime is backdated for audio extraction, but FlushDeadline needs to be a future deadline.
 				FlushDeadline: now.Add(detectionWindow),
 				Count:         1,
+				ModelContributions: map[string]ModelContribution{
+					item.ModelID: {
+						HitCount:      1,
+						MaxConfidence: confidence,
+						LastHitAt:     now,
+					},
+				},
 			}
 		}
 
@@ -708,8 +786,7 @@ func (p *Processor) processDetections(item classifier.Results) {
 
 	// Broadcast updated pending detections snapshot for "currently hearing" UI.
 	// This runs after all new detections are incorporated into pendingDetections.
-	minDet := calculateMinDetectionsFromSettings(settings)
-	snapshot := p.SnapshotVisiblePending(minDet)
+	snapshot := p.SnapshotVisiblePending()
 	p.broadcastPendingSnapshot(snapshot)
 }
 
@@ -753,7 +830,7 @@ func (p *Processor) processResults(settings *conf.Settings, item classifier.Resu
 		p.handleHumanDetection(settings, item, speciesLowercase, result)
 
 		// Determine confidence threshold and check filters
-		baseThreshold := p.getBaseConfidenceThreshold(settings, commonName, scientificName)
+		baseThreshold := p.getBaseConfidenceThreshold(settings, commonName, scientificName, item.ModelID)
 
 		// Check if detection should be filtered
 		shouldSkip, _ := p.shouldFilterDetection(settings, result, commonName, scientificName, speciesLowercase, baseThreshold, item.Source.ID, item.ModelID)
@@ -766,7 +843,66 @@ func (p *Processor) processResults(settings *conf.Settings, item classifier.Resu
 		detections = append(detections, det)
 	}
 
+	// Run ultrasonic validation filter on bat detections. Computed once per chunk
+	// since all detections share the same source audio.
+	if len(detections) > 0 && item.ModelID == classifier.RegistryIDBat {
+		p.applyUltrasonicFilter(settings, item, detections)
+	}
+
 	return detections
+}
+
+// applyUltrasonicFilter runs the ultrasonic validation filter on a batch of bat detections.
+// It computes the US frame CV once from the shared PCM audio and tags all detections
+// as unlikely when the CV falls below the configured threshold. The PCM data is at
+// the source sample rate (e.g., 256kHz), not the model's internal 48kHz rate.
+//
+//nolint:gocritic // hugeParam: Pass by value is intentional for item
+func (p *Processor) applyUltrasonicFilter(settings *conf.Settings, item classifier.Results, detections []Detections) {
+	filterCfg := settings.Bat.UltrasonicFilter
+	if !filterCfg.Enabled {
+		return
+	}
+
+	resolved := p.resolveAudioSource(item.Source)
+	sourceRate := resolved.SampleRate
+	if sourceRate <= 0 || sourceRate <= filterCfg.FrequencySplitHz*2 {
+		return
+	}
+
+	if len(item.PCMdata) < 4 {
+		return
+	}
+
+	samples := convert.BytesToFloat64PCM16(item.PCMdata)
+	cv, ok := ultrasonic.ComputeUSFrameCV(samples, sourceRate, filterCfg)
+	sourceName := resolved.DisplayName
+	if !ok {
+		GetLogger().Debug("ultrasonic filter: insufficient data for CV computation",
+			logger.String("source", sourceName),
+			logger.Int("sample_count", len(samples)),
+			logger.Int("sample_rate", sourceRate))
+		return
+	}
+
+	unlikely := ultrasonic.IsUnlikely(cv, filterCfg)
+	logFields := []logger.Field{
+		logger.Float64("us_frame_cv", cv),
+		logger.Float64("threshold", filterCfg.CVThreshold),
+		logger.Bool("unlikely", unlikely),
+		logger.String("source", sourceName),
+		logger.Int("detections", len(detections)),
+	}
+	if unlikely {
+		GetLogger().Info("ultrasonic validation: detections tagged unlikely", logFields...)
+		for i := range detections {
+			detections[i].Result.Unlikely = true
+			detections[i].Result.UltrasonicCV = cv
+			detections[i].Result.UltrasonicCVThreshold = filterCfg.CVThreshold
+		}
+	} else {
+		GetLogger().Debug("ultrasonic validation filter result", logFields...)
+	}
 }
 
 // parseAndValidateSpecies parses species information and validates it
@@ -811,6 +947,24 @@ func (p *Processor) parseAndValidateSpecies(settings *conf.Settings, result data
 	}
 
 	return
+}
+
+// shouldApplyRangeFilter returns true if the given model should have its
+// detections filtered by the geographic range filter.
+// BirdNET (any version), Perch, and unknown models are filtered. Perch returns
+// scientific-name labels, and the included-species set stores scientific names
+// for O(1) lookup, so the normal range list applies even when the active range
+// model is the embedded BirdNET geomodel rather than v3.
+// Bat/BSG: never filtered (independent species sets, no geomodel coverage).
+func shouldApplyRangeFilter(modelID string, settings *conf.Settings) bool {
+	if settings == nil || !settings.BirdNET.LocationConfigured {
+		return false
+	}
+	mInfo := classifier.DetectionModelInfoForID(modelID)
+	if mInfo.Name == detection.DefaultModelName || mInfo.Name == classifier.DetectionNamePerch {
+		return true
+	}
+	return false
 }
 
 // shouldFilterDetection checks if a detection should be filtered out
@@ -861,12 +1015,12 @@ func (p *Processor) shouldFilterDetection(settings *conf.Settings, result datast
 		return true, confidenceThreshold
 	}
 
-	// Check species inclusion filter
-	if !settings.IsSpeciesIncluded(result.Species) {
+	if shouldApplyRangeFilter(modelID, settings) && !settings.IsSpeciesIncluded(result.Species) {
 		if settings.Debug {
 			GetLogger().Debug("species not on included list",
 				logger.String("species", result.Species),
 				logger.Float32("confidence", result.Confidence),
+				logger.String("model_id", modelID),
 				logger.String("operation", "species_inclusion_filter"))
 		}
 		return true, confidenceThreshold
@@ -893,6 +1047,15 @@ func isSpeciesExcluded(commonName, scientificName string, excludeList []string) 
 func (p *Processor) createDetection(settings *conf.Settings, item classifier.Results, result datastore.Results, scientificName, commonName, speciesCode string) Detections {
 	// Create file name for audio clip
 	clipName := p.generateClipName(settings, scientificName, result.Confidence)
+
+	// Bat models at high sample rates need WAV when the configured format
+	// (MP3/Opus/AAC) cannot carry rates above 48kHz. Override the extension
+	// now so the database stores the same filename the export will write.
+	mInfo := classifier.DetectionModelInfoForID(item.ModelID)
+	sourceRate := p.resolveAudioSource(item.Source).SampleRate
+	if needsBatFormatFallback(mInfo.Name, mInfo.Version, sourceRate, settings.Realtime.Audio.Export.Type) {
+		clipName = replaceExtension(clipName, ".wav")
+	}
 
 	// Get capture length and pre-capture length for detection end time calculation
 	captureLength := time.Duration(settings.Realtime.Audio.Export.Length) * time.Second
@@ -999,11 +1162,19 @@ func (p *Processor) resolveAudioSource(source datastore.AudioSource) detection.A
 			audioSource.SafeString = existingSource.SafeString
 			audioSource.DisplayName = existingSource.DisplayName
 			audioSource.Type = detection.DetermineSourceType(existingSource.SafeString)
+			audioSource.SampleRate = existingSource.SampleRate
 		} else if existingSource, exists := registry.Get(source.ID); exists {
 			audioSource.ID = existingSource.ID
 			audioSource.SafeString = existingSource.SafeString
 			audioSource.DisplayName = existingSource.DisplayName
 			audioSource.Type = detection.DetermineSourceType(existingSource.SafeString)
+			audioSource.SampleRate = existingSource.SampleRate
+		}
+	}
+
+	if audioSource.SampleRate <= 0 && p.BufferMgr != nil {
+		if cb, err := p.BufferMgr.CaptureBuffer(audioSource.ID); err == nil {
+			audioSource.SampleRate = cb.SampleRate()
 		}
 	}
 
@@ -1079,7 +1250,7 @@ func (p *Processor) handleDogDetection(settings *conf.Settings, item classifier.
 		GetLogger().Info("dog detection filtered",
 			logger.Float32("confidence", result.Confidence),
 			logger.Float32("threshold", float32(settings.Realtime.DogBarkFilter.Confidence)),
-			logger.String("source", item.Source.DisplayName),
+			logger.String("source", p.getDisplayNameForSource(item.Source.ID)),
 			logger.String("operation", "dog_bark_filter"))
 		p.detectionMutex.Lock()
 		p.LastDogDetection[item.Source.ID] = item.StartTime
@@ -1097,7 +1268,7 @@ func (p *Processor) handleHumanDetection(settings *conf.Settings, item classifie
 		GetLogger().Info("human detection filtered",
 			logger.Float32("confidence", result.Confidence),
 			logger.Float32("threshold", float32(settings.Realtime.PrivacyFilter.Confidence)),
-			logger.String("source", item.Source.DisplayName),
+			logger.String("source", p.getDisplayNameForSource(item.Source.ID)),
 			logger.String("operation", "privacy_filter"))
 		// put human detection timestamp into LastHumanDetection map. This is used to discard
 		// bird detections if a human vocalization is detected after the first detection
@@ -1109,7 +1280,9 @@ func (p *Processor) handleHumanDetection(settings *conf.Settings, item classifie
 
 // getBaseConfidenceThreshold retrieves the confidence threshold for a species, using custom or global thresholds.
 // It supports lookup by both common name and scientific name for consistency with include/exclude matching.
-func (p *Processor) getBaseConfidenceThreshold(settings *conf.Settings, commonName, scientificName string) float32 {
+// The modelID parameter selects which global threshold to use when no per-species config exists:
+// bat models use settings.Bat.Threshold, all others use settings.BirdNET.Threshold.
+func (p *Processor) getBaseConfidenceThreshold(settings *conf.Settings, commonName, scientificName, modelID string) float32 {
 	// Check if species has a custom threshold using both common and scientific name lookup
 	if config, exists := lookupSpeciesConfig(settings.Realtime.Species.Config, commonName, scientificName); exists {
 		if settings.Debug {
@@ -1122,7 +1295,10 @@ func (p *Processor) getBaseConfidenceThreshold(settings *conf.Settings, commonNa
 		return float32(config.Threshold)
 	}
 
-	// Fall back to global threshold
+	// Fall back to model-specific global threshold
+	if modelID == classifier.RegistryIDBat {
+		return float32(settings.Bat.Threshold)
+	}
 	return float32(settings.BirdNET.Threshold)
 }
 
@@ -1184,13 +1360,13 @@ func (p *Processor) buildClipPath(settings *conf.Settings, scientificName string
 	return filepath.ToSlash(filepath.Join(year, month, filename))
 }
 
-// shouldDiscardDetection checks if a detection should be discarded based on various criteria
-func (p *Processor) shouldDiscardDetection(item *PendingDetection, minDetections int) (shouldDiscard bool, reason string) {
-	settings := p.currentSettings()
-
+// shouldDiscardDetection checks if a detection should be discarded based on various criteria.
+// The caller provides a settings snapshot and the precomputed minDetections (from
+// calculateMinDetectionsForModel) to avoid redundant settings fetches and ensure
+// consistency within a single flush cycle.
+func (p *Processor) shouldDiscardDetection(item *PendingDetection, settings *conf.Settings, minDetections int) (shouldDiscard bool, reason string) {
 	// Check minimum detection count
 	if item.Count < minDetections {
-		// Add structured logging for minimum count filtering
 		GetLogger().Debug("Detection discarded due to insufficient count",
 			logger.String("species", item.Detection.Result.Species.CommonName),
 			logger.Int("count", item.Count),
@@ -1272,25 +1448,39 @@ func (p *Processor) shouldDiscardDetection(item *PendingDetection, minDetections
 func (p *Processor) processApprovedDetection(item *PendingDetection, speciesName string) {
 	settings := p.currentSettings()
 
-	// Use item.Confidence directly - it's the correct confidence for THIS species,
-	// not Results[0].Confidence which could be a different (higher confidence) species
-	confidence := float32(item.Confidence)
-
 	GetLogger().Info("approving detection",
 		logger.String("species", speciesName),
 		logger.String("source", p.getDisplayNameForSource(item.Source)),
-		logger.String("model_id", item.ModelID),
-		logger.Int("match_count", item.Count),
+		logger.String("best_model_id", item.BestModelID),
+		logger.Int("total_count", item.Count),
+		logger.Int("model_count", len(item.ModelContributions)),
 		logger.Float64("confidence", item.Confidence),
 		logger.String("operation", "approve_detection"))
 
-	// Learn from this approved high-confidence detection for dynamic threshold adjustment.
-	// This is the correct place for learning - only approved detections should affect thresholds,
-	// not pending detections that may later be discarded as false positives.
-	// Note: speciesName is already lowercase (lowered in flushPendingDetections)
-	p.LearnFromApprovedDetection(item.ModelID, speciesName, item.Detection.Result.Species.ScientificName, confidence)
+	// Learn from each contributing model's approved detection for dynamic threshold adjustment.
+	// Only learn for models whose max confidence exceeds that model's own base threshold
+	// to avoid lowering thresholds based on weak signals that rode on another model's strength.
+	scientificName := item.Detection.Result.Species.ScientificName
+	for modelID, contrib := range item.ModelContributions {
+		baseThreshold := float64(p.getBaseConfidenceThreshold(settings, speciesName, scientificName, modelID))
+		if contrib.MaxConfidence >= baseThreshold {
+			p.LearnFromApprovedDetection(modelID, speciesName, scientificName, float32(contrib.MaxConfidence))
+		}
+	}
 
 	p.normalizeDetectionTimes(item)
+
+	// Populate model contributions on the Result for downstream persistence
+	if len(item.ModelContributions) > 0 {
+		item.Detection.Result.ModelContributions = make(map[string]detection.ResultModelContrib, len(item.ModelContributions))
+		for modelID, contrib := range item.ModelContributions {
+			item.Detection.Result.ModelContributions[modelID] = detection.ResultModelContrib{
+				Model:         classifier.DetectionModelInfoForID(modelID),
+				HitCount:      contrib.HitCount,
+				MaxConfidence: contrib.MaxConfidence,
+			}
+		}
+	}
 
 	actionList := p.getActionsForItem(&item.Detection)
 	for _, action := range actionList {
@@ -1423,9 +1613,13 @@ func (p *Processor) calculateMinDetections() int {
 }
 
 // flushPendingDetections processes one flush cycle, flushing eligible detections.
+// minDetections is computed per-item using the item's BestModelID so that bat
+// and bird models each apply their own false positive filter configuration.
 // Returns the count of pending and flushed detections for logging.
-func (p *Processor) flushPendingDetections(minDetections int) (pendingCount, flushedCount int) {
+func (p *Processor) flushPendingDetections() (pendingCount, flushedCount int) {
 	now := time.Now()
+	settings := p.currentSettings()
+	visThresholds := precomputeVisibilityThresholds(settings)
 
 	var terminalNotifs []SSEPendingDetection
 	var broadcastSnapshot []SSEPendingDetection
@@ -1440,22 +1634,21 @@ func (p *Processor) flushPendingDetections(minDetections int) (pendingCount, flu
 			continue
 		}
 
-		// Get species name from the detection data (not the map key,
-		// since source IDs like RTSP URLs may contain colons).
-		// Lowercase to match the convention used in processDetections and dynamic thresholds.
 		speciesName := strings.ToLower(item.Detection.Result.Species.CommonName)
+		itemMinDetections := calculateMinDetectionsForModel(settings, item.BestModelID)
 
-		if shouldDiscard, reason := p.shouldDiscardDetection(&item, minDetections); shouldDiscard {
+		if shouldDiscard, reason := p.shouldDiscardDetection(&item, settings, itemMinDetections); shouldDiscard {
 			GetLogger().Info("discarding detection",
 				logger.String("species", speciesName),
 				logger.String("source", p.getDisplayNameForSource(item.Source)),
+				logger.String("best_model_id", item.BestModelID),
+				logger.Int("total_count", item.Count),
+				logger.Int("model_count", len(item.ModelContributions)),
 				logger.String("reason", reason),
-				logger.Int("count", item.Count),
 				logger.String("operation", "discard_detection"))
 			delete(p.pendingDetections, mapKey)
 
-			// Collect rejected notification if species was visible
-			if item.Count >= CalculateVisibilityThreshold(minDetections) {
+			if item.Count >= visThresholds.getThreshold(item.BestModelID) {
 				terminalNotifs = append(terminalNotifs, p.buildFlushNotification(&item, PendingStatusRejected))
 			}
 
@@ -1465,53 +1658,38 @@ func (p *Processor) flushPendingDetections(minDetections int) (pendingCount, flu
 		GetLogger().Info("Flushing detection",
 			logger.String("species", speciesName),
 			logger.String("source", p.getDisplayNameForSource(item.Source)),
-			logger.String("model_id", item.ModelID),
+			logger.String("best_model_id", item.BestModelID),
 			logger.Bool("deadline_reached", true),
-			logger.Int("count", item.Count),
-			logger.Int("required", minDetections),
+			logger.Int("total_count", item.Count),
+			logger.Int("model_count", len(item.ModelContributions)),
+			logger.Int("required", itemMinDetections),
 			logger.String("operation", "flush_detection"))
 
 		p.processApprovedDetection(&item, speciesName)
 		delete(p.pendingDetections, mapKey)
 		flushedCount++
 
-		// Collect approved notification if species was visible
-		if item.Count >= CalculateVisibilityThreshold(minDetections) {
+		if item.Count >= visThresholds.getThreshold(item.BestModelID) {
 			terminalNotifs = append(terminalNotifs, p.buildFlushNotification(&item, PendingStatusApproved))
 		}
 	}
 
 	// Build snapshot while still holding the lock, then release before broadcasting.
 	if len(terminalNotifs) > 0 || flushedCount > 0 {
-		threshold := CalculateVisibilityThreshold(minDetections)
 		broadcastSnapshot = make([]SSEPendingDetection, 0, len(p.pendingDetections)+len(terminalNotifs))
 		for key := range p.pendingDetections {
 			item := p.pendingDetections[key]
-			if item.Count >= threshold {
-				broadcastSnapshot = append(broadcastSnapshot, SSEPendingDetection{
-					Species:         item.Detection.Result.Species.CommonName,
-					ScientificName:  item.Detection.Result.Species.ScientificName,
-					Thumbnail:       p.getThumbnailURL(item.Detection.Result.Species.ScientificName),
-					Status:          PendingStatusActive,
-					FirstDetected:   item.CreatedAt.Unix(),
-					AudioCapturedAt: unixOrZero(item.AudioCapturedAt),
-					LastUpdated:     item.LastUpdated.Unix(),
-					Source:          p.getDisplayNameForSource(item.Source),
-					SourceID:        item.Source,
-					ModelID:         item.ModelID,
-					HitCount:        item.Count,
-				})
+			if item.Count >= visThresholds.getThreshold(item.BestModelID) {
+				broadcastSnapshot = append(broadcastSnapshot, p.buildPendingDTO(&item, PendingStatusActive))
 			}
 		}
 		logPendingBroadcast(len(broadcastSnapshot), len(terminalNotifs))
 		broadcastSnapshot = append(broadcastSnapshot, terminalNotifs...)
-		// Sort for stable comparison in broadcastPendingSnapshot.
 		sortPendingSnapshot(broadcastSnapshot)
 	}
 
 	p.pendingMutex.Unlock()
 
-	// Broadcast outside the lock to avoid blocking processDetections.
 	if broadcastSnapshot != nil {
 		p.broadcastPendingSnapshot(broadcastSnapshot)
 	}
@@ -1519,14 +1697,26 @@ func (p *Processor) flushPendingDetections(minDetections int) (pendingCount, flu
 	return pendingCount, flushedCount
 }
 
-// logMinDetectionsChange logs when minDetections changes due to config update.
-func logMinDetectionsChange(lastValue, newValue int) {
-	if lastValue != -1 && newValue != lastValue {
-		GetLogger().Info("minDetections updated due to config change",
-			logger.Int("old_value", lastValue),
-			logger.Int("new_value", newValue),
+// logMinDetectionsChanges logs when bird or bat minDetections values change
+// due to a config hot-reload, helping operators verify that FP filter
+// adjustments took effect.
+func logMinDetectionsChanges(settings *conf.Settings, lastBird, lastBat *int) {
+	bird := calculateMinDetectionsFromSettings(settings)
+	bat := calculateBatMinDetections(settings)
+	if *lastBird != -1 && bird != *lastBird {
+		GetLogger().Info("bird minDetections updated due to config change",
+			logger.Int("old_value", *lastBird),
+			logger.Int("new_value", bird),
 			logger.String("operation", "pending_flusher_config_update"))
 	}
+	if *lastBat != -1 && bat != *lastBat {
+		GetLogger().Info("bat minDetections updated due to config change",
+			logger.Int("old_value", *lastBat),
+			logger.Int("new_value", bat),
+			logger.String("operation", "pending_flusher_config_update"))
+	}
+	*lastBird = bird
+	*lastBat = bat
 }
 
 // pendingDetectionsFlusher runs a goroutine that periodically checks the pending detections
@@ -1540,16 +1730,13 @@ func (p *Processor) pendingDetectionsFlusher() {
 		ticker := time.NewTicker(DefaultFlushInterval)
 		defer ticker.Stop()
 
-		lastMinDetections := -1
+		lastBirdMinDet, lastBatMinDet := -1, -1
 
 		for {
 			select {
 			case <-ticker.C:
-				minDetections := p.calculateMinDetections()
-				logMinDetectionsChange(lastMinDetections, minDetections)
-				lastMinDetections = minDetections
-
-				pendingCount, flushedCount := p.flushPendingDetections(minDetections)
+				logMinDetectionsChanges(p.currentSettings(), &lastBirdMinDet, &lastBatMinDet)
+				pendingCount, flushedCount := p.flushPendingDetections()
 
 				if pendingCount > 0 || flushedCount > 0 {
 					GetLogger().Debug("Pending detections flusher cycle",
@@ -1961,17 +2148,19 @@ func (p *Processor) buildSaveAudioAction(det *Detections, detectionCtx *Detectio
 	captureEndTime := det.Result.BeginTime.Add(time.Duration(captureLength) * time.Second)
 	if p.BufferMgr != nil && captureEndTime.After(time.Now()) {
 		return &SaveAudioAction{
-			Settings:      settings,
-			ClipName:      det.Result.ClipName,
-			bufferMgr:     p.BufferMgr,
-			sourceID:      det.Result.AudioSource.ID,
-			beginTime:     det.Result.BeginTime,
-			duration:      captureLength,
-			readyAt:       captureEndTime,
-			NoteID:        det.Result.ID, // May be 0 here; updated after DB save via DetectionCtx
-			PreRenderer:   p.preRenderer,
-			DetectionCtx:  detectionCtx,
-			CorrelationID: det.CorrelationID,
+			Settings:         settings,
+			ClipName:         det.Result.ClipName,
+			bufferMgr:        p.BufferMgr,
+			sourceID:         det.Result.AudioSource.ID,
+			beginTime:        det.Result.BeginTime,
+			duration:         captureLength,
+			readyAt:          captureEndTime,
+			sourceSampleRate: det.Result.AudioSource.SampleRate,
+			modelName:        det.Result.Model.Name,
+			NoteID:           det.Result.ID, // May be 0 here; updated after DB save via DetectionCtx
+			PreRenderer:      p.preRenderer,
+			DetectionCtx:     detectionCtx,
+			CorrelationID:    det.CorrelationID,
 		}
 	}
 
@@ -1990,23 +2179,27 @@ func (p *Processor) buildSaveAudioAction(det *Detections, detectionCtx *Detectio
 			logger.String("operation", "capture_buffer_read_for_export"))
 		// Return an action with nil pcmData; Execute() will be a no-op
 		return &SaveAudioAction{
-			Settings:      settings,
-			ClipName:      det.Result.ClipName,
-			NoteID:        det.Result.ID, // May be 0 here; updated after DB save via DetectionCtx
-			PreRenderer:   p.preRenderer,
-			DetectionCtx:  detectionCtx,
-			CorrelationID: det.CorrelationID,
+			Settings:         settings,
+			ClipName:         det.Result.ClipName,
+			sourceSampleRate: det.Result.AudioSource.SampleRate,
+			modelName:        det.Result.Model.Name,
+			NoteID:           det.Result.ID, // May be 0 here; updated after DB save via DetectionCtx
+			PreRenderer:      p.preRenderer,
+			DetectionCtx:     detectionCtx,
+			CorrelationID:    det.CorrelationID,
 		}
 	}
 
 	return &SaveAudioAction{
-		Settings:      settings,
-		ClipName:      det.Result.ClipName,
-		pcmData:       pcmData,
-		NoteID:        det.Result.ID, // May be 0 here; updated after DB save via DetectionCtx
-		PreRenderer:   p.preRenderer,
-		DetectionCtx:  detectionCtx,
-		CorrelationID: det.CorrelationID,
+		Settings:         settings,
+		ClipName:         det.Result.ClipName,
+		pcmData:          pcmData,
+		sourceSampleRate: det.Result.AudioSource.SampleRate,
+		modelName:        det.Result.Model.Name,
+		NoteID:           det.Result.ID, // May be 0 here; updated after DB save via DetectionCtx
+		PreRenderer:      p.preRenderer,
+		DetectionCtx:     detectionCtx,
+		CorrelationID:    det.CorrelationID,
 	}
 }
 
@@ -2145,13 +2338,25 @@ func (p *Processor) GetBackupScheduler() any {
 	return p.backupScheduler
 }
 
+// ReconfigureLogDeduplicator reinitializes the log deduplicator from current settings.
+func (p *Processor) ReconfigureLogDeduplicator() {
+	settings := p.currentSettings()
+	newDedup := initLogDeduplicator(settings)
+	p.logDedupMu.Lock()
+	p.logDedup = newDedup
+	p.logDedupMu.Unlock()
+}
+
 // CleanupLogDeduplicator removes stale log deduplication entries to prevent memory growth.
 // Returns the number of entries removed.
 func (p *Processor) CleanupLogDeduplicator(staleAfter time.Duration) int {
-	if p.logDedup == nil {
+	p.logDedupMu.RLock()
+	dedup := p.logDedup
+	p.logDedupMu.RUnlock()
+	if dedup == nil {
 		return 0
 	}
-	removed := p.logDedup.Cleanup(staleAfter)
+	removed := dedup.Cleanup(staleAfter)
 	if removed > 0 {
 		GetLogger().Debug("Cleaned stale log deduplication entries",
 			logger.Int("removed_count", removed),
@@ -2227,6 +2432,11 @@ func (p *Processor) ShutdownWithContext(ctx context.Context) error {
 	// Cancel flusher goroutine
 	if p.flusherCancel != nil {
 		p.flusherCancel()
+	}
+
+	// Stop pipeline stats logger
+	if p.pipelineStats != nil {
+		p.pipelineStats.Stop()
 	}
 
 	// Flush dynamic thresholds using the provided context deadline
@@ -2325,13 +2535,14 @@ func (p *Processor) ShutdownWithContext(ctx context.Context) error {
 // This prevents ~40,000+ identical "filtered_detections_count:0" logs per day
 // while still allowing debug-mode visibility into the detection pipeline.
 func (p *Processor) logDetectionResults(source string, rawCount, filteredCount int) {
-	// Guard against nil logDedup (can occur in tests or partial initialization)
-	if p.logDedup == nil {
+	p.logDedupMu.RLock()
+	dedup := p.logDedup
+	p.logDedupMu.RUnlock()
+	if dedup == nil {
 		return
 	}
 
-	// Use the LogDeduplicator to determine if we should log
-	shouldLog, reason := p.logDedup.ShouldLog(source, rawCount, filteredCount)
+	shouldLog, reason := dedup.ShouldLog(source, rawCount, filteredCount)
 
 	if shouldLog {
 		// Log all processing results at DEBUG level to avoid flooding console.

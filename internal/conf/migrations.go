@@ -365,14 +365,11 @@ func normalizeRTSPStreamEnabledDefaults(rawStreams any) ([]any, bool) {
 // prefixed with "error:"; non-fatal issues with "warning:".
 // knownIDs is the set of recognized config-level model identifiers; callers
 // should pass classifier.KnownConfigIDs() when available, or a hardcoded
-// fallback during early config loading.
-func (s *Settings) ValidateModelConfig(knownIDs map[string]bool) []string {
+// fallback during early config loading. When checkSourceRefs is true,
+// sources and streams are validated against models.enabled; set to false
+// during early loading before ScanInstalled has synced the enabled list.
+func (s *Settings) ValidateModelConfig(knownIDs map[string]bool, checkSourceRefs bool) []string {
 	var issues []string
-
-	enabledSet := make(map[string]bool, len(s.Models.Enabled))
-	for _, id := range s.Models.Enabled {
-		enabledSet[strings.ToLower(id)] = true
-	}
 
 	for _, id := range s.Models.Enabled {
 		if !knownIDs[strings.ToLower(id)] {
@@ -380,35 +377,28 @@ func (s *Settings) ValidateModelConfig(knownIDs map[string]bool) []string {
 		}
 	}
 
-	if enabledSet[ModelIDPerchV2] && !s.Perch.Enabled {
-		issues = append(issues, "error: "+ModelIDPerchV2+" in models.enabled but perch.enabled is false")
-	}
-
-	if s.Perch.Enabled && !enabledSet[ModelIDPerchV2] {
-		issues = append(issues, "warning: perch.enabled is true but '"+ModelIDPerchV2+"' is not in models.enabled")
-	}
-
-	if s.Perch.Enabled {
-		if s.Perch.ModelPath == "" {
-			issues = append(issues, "error: perch.enabled is true but perch.modelpath is empty")
+	// During early config loading, models.enabled is not yet synchronized
+	// with gallery-installed models (ScanInstalled runs later), so these
+	// checks produce false positives. The orchestrator re-validates with
+	// the authoritative model list after startup sync is complete.
+	if checkSourceRefs {
+		enabledSet := make(map[string]bool, len(s.Models.Enabled))
+		for _, id := range s.Models.Enabled {
+			enabledSet[strings.ToLower(id)] = true
 		}
-		if s.Perch.LabelPath == "" {
-			issues = append(issues, "error: perch.enabled is true but perch.labelpath is empty")
-		}
-	}
-
-	for i := range s.Realtime.Audio.Sources {
-		src := &s.Realtime.Audio.Sources[i]
-		for _, modelID := range src.Models {
-			if !enabledSet[strings.ToLower(modelID)] {
-				issues = append(issues, "warning: source \""+src.Name+"\" references model \""+modelID+"\" not in models.enabled")
+		for i := range s.Realtime.Audio.Sources {
+			src := &s.Realtime.Audio.Sources[i]
+			for _, modelID := range src.Models {
+				if !enabledSet[strings.ToLower(modelID)] {
+					issues = append(issues, "warning: source \""+src.Name+"\" references model \""+modelID+"\" not in models.enabled")
+				}
 			}
 		}
-	}
-	for _, stream := range s.Realtime.RTSP.AllStreams() {
-		for _, modelID := range stream.Models {
-			if !enabledSet[strings.ToLower(modelID)] {
-				issues = append(issues, "warning: stream \""+stream.Name+"\" references model \""+modelID+"\" not in models.enabled")
+		for _, stream := range s.Realtime.RTSP.AllStreams() {
+			for _, modelID := range stream.Models {
+				if !enabledSet[strings.ToLower(modelID)] {
+					issues = append(issues, "warning: stream \""+stream.Name+"\" references model \""+modelID+"\" not in models.enabled")
+				}
 			}
 		}
 	}
@@ -424,8 +414,8 @@ func (s *Settings) applyModelValidation() error {
 	// Default known IDs - matches classifier.KnownConfigIDs() at compile time.
 	// This fallback is used during config loading before the classifier package
 	// is available. The orchestrator re-validates with the authoritative list.
-	knownIDs := map[string]bool{ModelIDBirdNET: true, ModelIDPerchV2: true, ModelIDBat: true}
-	modelIssues := s.ValidateModelConfig(knownIDs)
+	knownIDs := map[string]bool{ModelIDBirdNET: true, ModelIDPerchV2: true, ModelIDBat: true, ModelIDBSG: true}
+	modelIssues := s.ValidateModelConfig(knownIDs, false)
 	var fatalErrors []string
 	for _, issue := range modelIssues {
 		if strings.HasPrefix(issue, "error:") {

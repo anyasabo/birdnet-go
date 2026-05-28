@@ -34,32 +34,25 @@ func isStreamType(t audiocore.SourceType) bool {
 	}
 }
 
-// Default buffer parameters used when allocating analysis and capture buffers.
-// These match the values used by the existing BirdNET analysis pipeline.
+// Default buffer parameters used when allocating capture buffers.
 const (
-	// defaultAnalysisCapacity is the ring buffer size in bytes.
-	// 288000 bytes = 3 seconds of 16-bit 48 kHz mono audio.
-	defaultAnalysisCapacity = 288000
-
-	// defaultAnalysisOverlap is the overlap in bytes between consecutive reads.
-	// 144000 bytes = 1.5 seconds of 16-bit 48 kHz mono audio.
-	defaultAnalysisOverlap = 144000
-
-	// defaultAnalysisReadSize is the number of fresh bytes per read.
-	// 144000 bytes = 1.5 seconds of 16-bit 48 kHz mono audio.
-	defaultAnalysisReadSize = 144000
-
 	// defaultCaptureBufferSeconds is the ring buffer capacity in seconds.
 	// This determines how much audio history is retained for clip export.
 	// Must be large enough to cover the export length + detection window
 	// + pre-capture offset. Matches conf.DefaultCaptureBufferSeconds.
 	defaultCaptureBufferSeconds = conf.DefaultCaptureBufferSeconds
 
-	// defaultBytesPerSample is the default PCM bytes per sample (16-bit).
-	defaultBytesPerSample = 2
-
 	// defaultSampleRate is used when a source config has no sample rate set.
 	defaultSampleRate = 48000
+
+	// defaultChannels is used when a source config has no channel count set.
+	defaultChannels = 1
+
+	// defaultBitDepth is used when a source config has no bit depth set.
+	defaultBitDepth = 16
+
+	// defaultBytesPerSample is the default PCM bytes per sample, derived from defaultBitDepth.
+	defaultBytesPerSample = defaultBitDepth / 8
 )
 
 // Config holds the configuration needed to create an AudioEngine.
@@ -135,8 +128,14 @@ type AudioEngine struct {
 	cancel    context.CancelCauseFunc
 
 	// primaryModelID is the model identifier used when allocating analysis
-	// buffers. Set via SetPrimaryModelID before adding sources.
+	// buffers. Set via SetPrimaryModel before adding sources.
 	primaryModelID string
+	// primaryClipBytes, primaryOverlapBytes, primaryReadSize are the analysis
+	// buffer dimensions derived from the primary model's spec. Set via
+	// SetPrimaryModel before adding sources.
+	primaryClipBytes    int
+	primaryOverlapBytes int
+	primaryReadSize     int
 	// ffmpegPath is the absolute path to the FFmpeg binary.
 	ffmpegPath string
 	// soxPath is the absolute path to the SoX binary.
@@ -176,6 +175,11 @@ func New(ctx context.Context, cfg *Config, scheduler *schedule.QuietHoursSchedul
 	}, nil, log, bufMgr)
 	deviceMgr := audiocore.NewDeviceManager(router, bufMgr, log)
 
+	// Probe all device capabilities at startup, before any capture begins.
+	// Exclusive mode probing requires sole device access, so it must happen
+	// before sources are added and capture starts.
+	audiocore.ProbeAllDeviceCapabilities(log)
+
 	e := &AudioEngine{
 		registry:             audiocore.NewSourceRegistry(log),
 		router:               router,
@@ -193,9 +197,7 @@ func New(ctx context.Context, cfg *Config, scheduler *schedule.QuietHoursSchedul
 		debug:                cfg.Debug,
 		captureBufferSeconds: captureBufferSecs(cfg.CaptureBufferSeconds),
 	}
-	if scheduler != nil {
-		e.scheduler.Store(scheduler)
-	}
+	e.SetScheduler(scheduler)
 	return e
 }
 
@@ -234,14 +236,98 @@ func (e *AudioEngine) Scheduler() *schedule.QuietHoursScheduler {
 // resources (SunCalc, ControlChan) only available after service startup.
 func (e *AudioEngine) SetScheduler(s *schedule.QuietHoursScheduler) {
 	e.scheduler.Store(s)
+	if s != nil {
+		s.SetStreamManager(func() schedule.StreamManager { return e })
+	}
 }
 
-// SetPrimaryModelID sets the model identifier used when allocating analysis
-// buffers. This must be called before AddSource to ensure buffers are keyed
-// to the correct model. The value should come from the Orchestrator's
-// ModelInfo.ID.
-func (e *AudioEngine) SetPrimaryModelID(id string) {
+// GetActiveStreamIDs returns the runtime source IDs currently tracked by FFmpeg.
+func (e *AudioEngine) GetActiveStreamIDs() []string {
+	return e.ffmpegMgr.GetActiveStreamIDs()
+}
+
+// GetActiveStreamURLs returns active runtime sourceID -> raw stream URL.
+func (e *AudioEngine) GetActiveStreamURLs() map[string]string {
+	ids := e.ffmpegMgr.GetActiveStreamIDs()
+	urls := make(map[string]string, len(ids))
+	for _, sourceID := range ids {
+		if url, ok := e.registry.ConnectionStringByID(sourceID); ok {
+			urls[sourceID] = url
+		}
+	}
+	return urls
+}
+
+// StopStream stops the FFmpeg stream for sourceID while keeping the registered
+// source, routes, and buffers available for a later quiet-hours restart.
+func (e *AudioEngine) StopStream(sourceID string) error {
+	if err := e.ffmpegMgr.StopStream(sourceID); err != nil {
+		return err
+	}
+	_ = e.registry.UpdateState(sourceID, audiocore.SourceStopped)
+	return nil
+}
+
+// StartStream restarts a quiet-hours-suppressed FFmpeg stream under its
+// existing runtime sourceID.
+func (e *AudioEngine) StartStream(sourceID, url, transport string) error {
+	src, ok := e.registry.Get(sourceID)
+	if !ok {
+		return fmt.Errorf("restart stream: %w: %s", audiocore.ErrSourceNotFound, sourceID)
+	}
+	if transport == "" {
+		transport = e.transport
+	}
+	sampleRate := src.SampleRate
+	if sampleRate <= 0 {
+		sampleRate = defaultSampleRate
+	}
+	channels := src.Channels
+	if channels <= 0 {
+		channels = defaultChannels
+	}
+	bitDepth := src.BitDepth
+	if bitDepth <= 0 {
+		bitDepth = defaultBitDepth
+	}
+	streamCfg := &ffmpeg.StreamConfig{
+		SourceID:         sourceID,
+		SourceName:       src.DisplayName,
+		URL:              url,
+		Type:             string(src.Type),
+		SampleRate:       sampleRate,
+		SourceSampleRate: src.SourceSampleRate,
+		BitDepth:         bitDepth,
+		Channels:         channels,
+		FFmpegPath:       e.ffmpegPath,
+		Transport:        transport,
+		FFmpegParameters: e.ffmpegParameters,
+		LogLevel:         e.logLevel,
+		Debug:            e.debug,
+	}
+	if err := e.ffmpegMgr.StartStream(streamCfg); err != nil {
+		_ = e.registry.UpdateState(sourceID, audiocore.SourceError)
+		return err
+	}
+	_ = e.registry.UpdateState(sourceID, audiocore.SourceRunning)
+	return nil
+}
+
+// SetPrimaryModel sets the model identifier and analysis buffer dimensions
+// for the primary model. This must be called before AddSource to ensure
+// buffers are allocated with the correct model key and size.
+// clipBytes, overlapBytes, and readSize should be derived from the model's
+// ModelSpec.BufferDimensions(), matching the secondary model allocation path.
+func (e *AudioEngine) SetPrimaryModel(id string, clipBytes, overlapBytes, readSize int) {
 	e.primaryModelID = id
+	e.primaryClipBytes = clipBytes
+	e.primaryOverlapBytes = overlapBytes
+	e.primaryReadSize = readSize
+	e.logger.Info("primary model buffer dimensions set",
+		logger.String("model_id", id),
+		logger.Int("clip_bytes", clipBytes),
+		logger.Int("overlap_bytes", overlapBytes),
+		logger.Int("read_size", readSize))
 }
 
 // PrimaryModelID returns the current primary model identifier.
@@ -254,6 +340,14 @@ func (e *AudioEngine) PrimaryModelID() string {
 // is started. For audio card sources, the device manager begins capture.
 // File-type sources are registered but no long-running capture is started.
 func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
+	if e.primaryModelID == "" {
+		return errors.Newf("SetPrimaryModel must be called before AddSource").
+			Component("audiocore.engine").
+			Category(errors.CategoryState).
+			Context("source_id", cfg.ID).
+			Build()
+	}
+
 	// 1. Register the source.
 	src, err := e.registry.Register(cfg)
 	if err != nil {
@@ -267,14 +361,21 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 
 	sourceID := src.ID
 
-	// 2. Allocate analysis buffer.
+	// 2. Allocate analysis buffer using the primary model's native dimensions.
+	// BufferConsumer resamples audio to the model's target rate before writing,
+	// so buffer size must match the model spec, not the source sample rate.
+	// Clear any stale buffers for this source ID (e.g., watchdog restart
+	// reuses the same source ID without going through ReconfigureSource).
+	e.bufferMgr.DeallocateSource(sourceID)
+
 	if err := e.bufferMgr.AllocateAnalysis(
 		sourceID,
 		e.primaryModelID,
-		defaultAnalysisCapacity,
-		defaultAnalysisOverlap,
-		defaultAnalysisReadSize,
+		e.primaryClipBytes,
+		e.primaryOverlapBytes,
+		e.primaryReadSize,
 	); err != nil {
+		_ = e.registry.Unregister(sourceID)
 		return errors.New(err).
 			Component("audiocore.engine").
 			Category(errors.CategoryBuffer).
@@ -283,19 +384,37 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 			Build()
 	}
 
-	// 3. Allocate capture buffer.
+	// 3. Default and validate sample rate and channels for capture buffer and stream config.
 	sampleRate := cfg.SampleRate
 	if sampleRate <= 0 {
 		sampleRate = defaultSampleRate
 	}
+	channels := cfg.Channels
+	if channels <= 0 {
+		channels = defaultChannels
+	}
+	bitDepth := cfg.BitDepth
+	if bitDepth <= 0 {
+		bitDepth = defaultBitDepth
+	}
+
+	e.logger.Info("allocated primary analysis buffer",
+		logger.String("source_id", sourceID),
+		logger.String("model_id", e.primaryModelID),
+		logger.Int("clip_bytes", e.primaryClipBytes),
+		logger.Int("overlap_bytes", e.primaryOverlapBytes),
+		logger.Int("read_size", e.primaryReadSize),
+		logger.Int("source_sample_rate", sampleRate))
+
+	// 4. Allocate capture buffer.
 	if err := e.bufferMgr.AllocateCapture(
 		sourceID,
 		e.captureBufferSeconds,
 		sampleRate,
 		defaultBytesPerSample,
 	); err != nil {
-		// Roll back analysis buffer on failure.
 		e.bufferMgr.DeallocateSource(sourceID)
+		_ = e.registry.Unregister(sourceID)
 		return errors.New(err).
 			Component("audiocore.engine").
 			Category(errors.CategoryBuffer).
@@ -304,7 +423,7 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 			Build()
 	}
 
-	// 4. Start capture based on source type.
+	// 5. Start capture based on source type.
 	if isStreamType(cfg.Type) {
 		streamCfg := &ffmpeg.StreamConfig{
 			SourceID:         sourceID,
@@ -312,8 +431,9 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 			URL:              cfg.ConnectionString,
 			Type:             string(cfg.Type),
 			SampleRate:       sampleRate,
-			BitDepth:         cfg.BitDepth,
-			Channels:         cfg.Channels,
+			SourceSampleRate: cfg.SourceSampleRate,
+			BitDepth:         bitDepth,
+			Channels:         channels,
 			FFmpegPath:       e.ffmpegPath,
 			Transport:        e.transport,
 			FFmpegParameters: e.ffmpegParameters,
@@ -333,15 +453,15 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 	} else if cfg.Type == audiocore.SourceTypeAudioCard {
 		devCfg := audiocore.DeviceConfig{
 			SampleRate: sampleRate,
-			BitDepth:   cfg.BitDepth,
-			Channels:   cfg.Channels,
+			BitDepth:   bitDepth,
+			Channels:   channels,
 		}
 		e.logger.Info("starting audio card capture",
 			logger.String("source_id", sourceID),
 			logger.String("device_id", cfg.ConnectionString),
 			logger.Int("sample_rate", sampleRate),
-			logger.Int("bit_depth", cfg.BitDepth),
-			logger.Int("channels", cfg.Channels))
+			logger.Int("bit_depth", bitDepth),
+			logger.Int("channels", channels))
 		if err := e.deviceMgr.StartCapture(sourceID, cfg.ConnectionString, devCfg); err != nil {
 			e.logger.Error("audio card capture failed",
 				logger.String("source_id", sourceID),
@@ -359,9 +479,17 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 	}
 	// File-type sources: registered + buffers allocated, but no long-running capture.
 
+	// 6. Sync defaulted audio params back to registry so downstream consumers
+	// see the effective values (not the raw config which may have been zero).
+	e.registry.UpdateAudioParams(sourceID, sampleRate, bitDepth, channels)
+
 	e.logger.Info("source added",
 		logger.String("source_id", sourceID),
-		logger.String("type", cfg.Type.String()))
+		logger.String("type", cfg.Type.String()),
+		logger.Int("sample_rate", sampleRate),
+		logger.Int("source_sample_rate", cfg.SourceSampleRate),
+		logger.String("primary_model", e.primaryModelID),
+		logger.Int("analysis_clip_bytes", e.primaryClipBytes))
 
 	return nil
 }
@@ -409,10 +537,25 @@ func (e *AudioEngine) RemoveSource(sourceID string) error {
 // ReconfigureSource stops the existing capture for sourceID, reallocates
 // buffers with the new configuration, and restarts capture.
 func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.SourceConfig) error {
+	if e.primaryModelID == "" {
+		return errors.Newf("SetPrimaryModel must be called before ReconfigureSource").
+			Component("audiocore.engine").
+			Category(errors.CategoryState).
+			Context("source_id", sourceID).
+			Build()
+	}
+
 	src, ok := e.registry.Get(sourceID)
 	if !ok {
 		return fmt.Errorf("reconfigure source: %w: %s", audiocore.ErrSourceNotFound, sourceID)
 	}
+
+	e.logger.Info("reconfiguring audio source",
+		logger.String("source_id", sourceID),
+		logger.String("device", newCfg.ConnectionString),
+		logger.Int("sample_rate", newCfg.SampleRate),
+		logger.Int("bit_depth", newCfg.BitDepth),
+		logger.Int("channels", newCfg.Channels))
 
 	// 1. Stop existing capture.
 	if isStreamType(src.Type) {
@@ -421,21 +564,33 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 		_ = e.deviceMgr.StopCapture(sourceID)
 	}
 
-	// 2. Deallocate old buffers.
+	// 2. Remove all routes so consumers don't reference deallocated buffers.
+	e.router.RemoveAllRoutes(sourceID)
+
+	// 3. Deallocate old buffers.
 	e.bufferMgr.DeallocateSource(sourceID)
 
-	// 3. Allocate new buffers.
+	// 4. Allocate new analysis buffer using the primary model's native dimensions.
 	sampleRate := newCfg.SampleRate
 	if sampleRate <= 0 {
 		sampleRate = defaultSampleRate
 	}
+	channels := newCfg.Channels
+	if channels <= 0 {
+		channels = defaultChannels
+	}
+	bitDepth := newCfg.BitDepth
+	if bitDepth <= 0 {
+		bitDepth = defaultBitDepth
+	}
 	if err := e.bufferMgr.AllocateAnalysis(
 		sourceID,
 		e.primaryModelID,
-		defaultAnalysisCapacity,
-		defaultAnalysisOverlap,
-		defaultAnalysisReadSize,
+		e.primaryClipBytes,
+		e.primaryOverlapBytes,
+		e.primaryReadSize,
 	); err != nil {
+		_ = e.registry.UpdateState(sourceID, audiocore.SourceError)
 		return errors.New(err).
 			Component("audiocore.engine").
 			Category(errors.CategoryBuffer).
@@ -443,6 +598,13 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 			Context("source_id", sourceID).
 			Build()
 	}
+	e.logger.Info("reallocated primary analysis buffer",
+		logger.String("source_id", sourceID),
+		logger.String("model_id", e.primaryModelID),
+		logger.Int("clip_bytes", e.primaryClipBytes),
+		logger.Int("overlap_bytes", e.primaryOverlapBytes),
+		logger.Int("read_size", e.primaryReadSize),
+		logger.Int("source_sample_rate", sampleRate))
 	if err := e.bufferMgr.AllocateCapture(
 		sourceID,
 		e.captureBufferSeconds,
@@ -450,6 +612,7 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 		defaultBytesPerSample,
 	); err != nil {
 		e.bufferMgr.DeallocateSource(sourceID)
+		_ = e.registry.UpdateState(sourceID, audiocore.SourceError)
 		return errors.New(err).
 			Component("audiocore.engine").
 			Category(errors.CategoryBuffer).
@@ -458,7 +621,7 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 			Build()
 	}
 
-	// 4. Restart capture with new config.
+	// 5. Restart capture with new config.
 	newType := newCfg.Type
 	if newType == "" || newType == audiocore.SourceTypeUnknown {
 		newType = src.Type
@@ -471,8 +634,9 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 			URL:              newCfg.ConnectionString,
 			Type:             string(newType),
 			SampleRate:       sampleRate,
-			BitDepth:         newCfg.BitDepth,
-			Channels:         newCfg.Channels,
+			SourceSampleRate: newCfg.SourceSampleRate,
+			BitDepth:         bitDepth,
+			Channels:         channels,
 			FFmpegPath:       e.ffmpegPath,
 			Transport:        e.transport,
 			FFmpegParameters: e.ffmpegParameters,
@@ -480,7 +644,7 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 			Debug:            e.debug,
 		}
 		if err := e.ffmpegMgr.StartStream(streamCfg); err != nil {
-			// Source stays registered — mark it as errored so callers can see the failure.
+			e.bufferMgr.DeallocateSource(sourceID)
 			_ = e.registry.UpdateState(sourceID, audiocore.SourceError)
 			return errors.New(err).
 				Component("audiocore.engine").
@@ -492,11 +656,11 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 	} else if newType == audiocore.SourceTypeAudioCard {
 		devCfg := audiocore.DeviceConfig{
 			SampleRate: sampleRate,
-			BitDepth:   newCfg.BitDepth,
-			Channels:   newCfg.Channels,
+			BitDepth:   bitDepth,
+			Channels:   channels,
 		}
 		if err := e.deviceMgr.StartCapture(sourceID, newCfg.ConnectionString, devCfg); err != nil {
-			// Source stays registered — mark it as errored so callers can see the failure.
+			e.bufferMgr.DeallocateSource(sourceID)
 			_ = e.registry.UpdateState(sourceID, audiocore.SourceError)
 			return errors.New(err).
 				Component("audiocore.engine").
@@ -506,6 +670,9 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 				Build()
 		}
 	}
+
+	// 6. Update registry so downstream consumers see the new audio params.
+	e.registry.UpdateAudioParams(sourceID, sampleRate, bitDepth, channels)
 
 	e.logger.Info("source reconfigured",
 		logger.String("source_id", sourceID),

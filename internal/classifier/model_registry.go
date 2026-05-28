@@ -28,6 +28,18 @@ const (
 	BackendONNX   = "ONNX"
 )
 
+// Registry ID constants for model identification across packages.
+const (
+	RegistryIDBirdNETV3 = "BirdNET_V3.0"
+	RegistryIDBSG       = "BSG"
+	RegistryIDBat       = "Bat"
+	RegistryIDPerchV2   = "Perch_V2"
+)
+
+// DetectionNamePerch is the detection model name for Perch classifiers,
+// matching the DetectionName field in the ModelRegistry.
+const DetectionNamePerch = "Perch"
+
 // ModelInfo represents metadata about a classifier model.
 type ModelInfo struct {
 	ID               string    // Unique registry identifier (e.g., "BirdNET_V2.4")
@@ -70,8 +82,8 @@ var ModelRegistry = map[string]ModelInfo{
 		DefaultLocale: "en-uk",
 		NumSpecies:    6523,
 	},
-	"BirdNET_V3.0": {
-		ID:               "BirdNET_V3.0",
+	RegistryIDBirdNETV3: {
+		ID:               RegistryIDBirdNETV3,
 		Name:             ModelNameBirdNETv30,
 		Backend:          BackendONNX,
 		DetectionName:    "BirdNET",
@@ -84,23 +96,43 @@ var ModelRegistry = map[string]ModelInfo{
 			"no", "pl", "pt", "pt-br", "pt-pt", "ro", "ru", "sk", "sl", "sr", "sv", "th", "tr", "uk", "zh"},
 		DefaultLocale: "en-uk",
 	},
-	"Perch_V2": {
-		ID:               "Perch_V2",
+	RegistryIDPerchV2: {
+		ID:               RegistryIDPerchV2,
 		Name:             ModelNamePerchV2,
 		Backend:          BackendONNX,
-		DetectionName:    "Perch",
+		DetectionName:    DetectionNamePerch,
 		DetectionVersion: "V2",
-		Description:      "Perch v2 model with ~14,795 species (scientific names only)",
+		Description:      "Perch v2 multi-taxa model with ~14,795 species including birds, insects, amphibians, and mammals (scientific names only)",
 		Spec:             ModelSpec{SampleRate: 32000, ClipLength: 5 * time.Second},
 		ConfigAliases:    []string{conf.ModelIDPerchV2},
 		NumSpecies:       14795,
+	},
+	RegistryIDBat: {
+		ID:               RegistryIDBat,
+		Name:             "Bat Classifier",
+		Backend:          BackendONNX,
+		DetectionName:    "BattyBirdNET",
+		DetectionVersion: "1.0",
+		Description:      "Bat species detection using BirdNET v2.4 embeddings",
+		Spec:             ModelSpec{SampleRate: 48000, ClipLength: 3 * time.Second, RawSampleRate: 256000, MinRawSampleRate: 96000, RecommendedSampleRate: 192000},
+		ConfigAliases:    []string{conf.ModelIDBat},
+	},
+	RegistryIDBSG: {
+		ID:               RegistryIDBSG,
+		Name:             "BSG Finland",
+		Backend:          BackendONNX,
+		DetectionName:    "BSG",
+		DetectionVersion: "4.4",
+		Description:      "Regional bird classifier optimized for Finnish bird species",
+		Spec:             ModelSpec{SampleRate: 48000, ClipLength: 3 * time.Second},
+		ConfigAliases:    []string{conf.ModelIDBSG},
 	},
 }
 
 // birdnetVersionToRegistryID maps user-facing BirdNET version strings to registry IDs.
 var birdnetVersionToRegistryID = map[string]string{
 	"2.4": "BirdNET_V2.4",
-	"3.0": "BirdNET_V3.0",
+	"3.0": RegistryIDBirdNETV3,
 }
 
 // KnownConfigIDs collects all ConfigAliases from the registry.
@@ -113,6 +145,16 @@ func KnownConfigIDs() map[string]bool {
 		}
 	}
 	return ids
+}
+
+// ConfigAliasForRegistry returns the primary config alias for a registry ID.
+// Returns "" if the registry ID is unknown or has no aliases.
+func ConfigAliasForRegistry(registryID string) string {
+	info, ok := ModelRegistry[registryID]
+	if !ok || len(info.ConfigAliases) == 0 {
+		return ""
+	}
+	return info.ConfigAliases[0]
 }
 
 // GetModelSpec returns the ModelSpec for a registry ID.
@@ -144,12 +186,14 @@ var filenamePatterns = map[string]string{
 	"birdnet_v2.4":           "BirdNET_V2.4",
 	"birdnet-v2.4":           "BirdNET_V2.4",
 	"birdnet-go_classifier":  "BirdNET_V2.4", // custom-named classifier builds
-	"birdnet_global_v3.0":    "BirdNET_V3.0",
-	"birdnet-v30":            "BirdNET_V3.0",
-	"birdnet_v3.0":           "BirdNET_V3.0",
-	"birdnet-v3.0":           "BirdNET_V3.0",
-	"perch_v2":               "Perch_V2",
-	"perch-v2":               "Perch_V2",
+	"birdnet_global_v3.0":    RegistryIDBirdNETV3,
+	"birdnet-v30":            RegistryIDBirdNETV3,
+	"birdnet_v3.0":           RegistryIDBirdNETV3,
+	"birdnet-v3.0":           RegistryIDBirdNETV3,
+	"perch_v2":               RegistryIDPerchV2,
+	"perch-v2":               RegistryIDPerchV2,
+	"bsg_finland":            RegistryIDBSG,
+	"bsg-finland":            RegistryIDBSG,
 }
 
 // DetermineModelInfo identifies the model type from a file path or model identifier.

@@ -1,11 +1,10 @@
-//go:build onnx
-
 package onnx
 
 // ModelType identifies which bird classification model is being used.
 type ModelType int
 
 const (
+	// BirdNETv24 - 48kHz, 3s segments, optional embeddings (when model has 2 outputs).
 	BirdNETv24 ModelType = iota
 	BirdNETv30
 	PerchV2
@@ -67,6 +66,7 @@ type ModelConfig struct {
 	EmbeddingSize  int     // 0 if model doesn't produce embeddings
 	EmbeddingIndex int     // which output tensor contains embeddings, -1 if none
 	LogitsIndex    int     // which output tensor contains logits
+	LogitsSize     int     // actual logits output dimension from model metadata
 	InputShape     []int64 // actual shape from ONNX model
 }
 

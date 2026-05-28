@@ -23,10 +23,12 @@ import (
 	apiv2 "github.com/tphakala/birdnet-go/internal/api/v2"
 	"github.com/tphakala/birdnet-go/internal/audiocore"
 	"github.com/tphakala/birdnet-go/internal/audiocore/engine"
+	"github.com/tphakala/birdnet-go/internal/classifier"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	datastoreV2 "github.com/tphakala/birdnet-go/internal/datastore/v2"
 	"github.com/tphakala/birdnet-go/internal/errors"
+	"github.com/tphakala/birdnet-go/internal/health"
 	"github.com/tphakala/birdnet-go/internal/imageprovider"
 	"github.com/tphakala/birdnet-go/internal/logger"
 	"github.com/tphakala/birdnet-go/internal/observability"
@@ -66,6 +68,12 @@ type Server struct {
 
 	// Audio engine (unified audio subsystem)
 	engine *engine.AudioEngine
+
+	// Model gallery manager (optional, nil when not configured)
+	modelManager *classifier.ModelManager
+
+	// Health error buffer shared between the logger and health checks
+	healthErrors *health.ErrorRingBuffer
 
 	// Channels
 	controlChan    chan string
@@ -240,6 +248,21 @@ func WithV2Manager(mgr datastoreV2.Manager) ServerOption {
 func WithAudioEngine(e *engine.AudioEngine) ServerOption {
 	return func(s *Server) {
 		s.engine = e
+	}
+}
+
+// WithModelManager sets the ModelManager for model gallery operations.
+func WithModelManager(mm *classifier.ModelManager) ServerOption {
+	return func(s *Server) {
+		s.modelManager = mm
+	}
+}
+
+// WithHealthErrorBuffer sets a shared ErrorRingBuffer that the logger writes to
+// and the health checks read from.
+func WithHealthErrorBuffer(buf *health.ErrorRingBuffer) ServerOption {
+	return func(s *Server) {
+		s.healthErrors = buf
 	}
 }
 
@@ -471,6 +494,21 @@ func (s *Server) setupRoutes() error {
 		logger.String("spa_mode", s.spaHandler.DevModeStatus()),
 	)
 
+	// Build the list of v2 controller options.
+	v2Opts := []apiv2.Option{
+		apiv2.WithAuthMiddleware(s.authMiddleware),
+		apiv2.WithAuthService(s.authService),
+		apiv2.WithV2Manager(s.v2Manager),
+		apiv2.WithMetricsStore(observability.NewMemoryStore(apiv2.MetricsHistoryMaxPoints)),
+		apiv2.WithAudioEngine(s.engine),
+	}
+	if s.modelManager != nil {
+		v2Opts = append(v2Opts, apiv2.WithModelManager(s.modelManager))
+	}
+	if s.healthErrors != nil {
+		v2Opts = append(v2Opts, apiv2.WithHealthErrorBuffer(s.healthErrors))
+	}
+
 	// Initialize API v2 controller with auth middleware and service injected
 	apiController, err := apiv2.New(
 		s.echo,
@@ -480,11 +518,7 @@ func (s *Server) setupRoutes() error {
 		s.sunCalc,
 		s.controlChan,
 		s.metrics,
-		apiv2.WithAuthMiddleware(s.authMiddleware),
-		apiv2.WithAuthService(s.authService),
-		apiv2.WithV2Manager(s.v2Manager),
-		apiv2.WithMetricsStore(observability.NewMemoryStore(apiv2.MetricsHistoryMaxPoints)),
-		apiv2.WithAudioEngine(s.engine),
+		v2Opts...,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to initialize API v2: %w", err)

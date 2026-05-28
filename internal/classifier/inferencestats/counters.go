@@ -4,6 +4,8 @@
 package inferencestats
 
 import (
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -53,4 +55,75 @@ func updateAtomicMax(addr *atomic.Int64, val int64) {
 			return
 		}
 	}
+}
+
+// SanitizeModelID replaces non-alphanumeric/non-underscore characters with underscores.
+func SanitizeModelID(modelID string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			return r
+		}
+		return '_'
+	}, modelID)
+}
+
+// MetricKey returns the metrics store key for a model's average inference time.
+func MetricKey(modelID string) string {
+	return "inference." + SanitizeModelID(modelID) + ".avg_ms"
+}
+
+// CounterMap tracks per-model inference counters. Safe for concurrent use.
+type CounterMap struct {
+	models sync.Map // model ID (string) -> *Counters
+}
+
+// RecordInvoke records a single invocation duration for the given model ID.
+func (m *CounterMap) RecordInvoke(modelID string, durationUs int64) {
+	if v, ok := m.models.Load(modelID); ok {
+		v.(*Counters).RecordInvoke(durationUs)
+		return
+	}
+	c, _ := m.models.LoadOrStore(modelID, &Counters{})
+	c.(*Counters).RecordInvoke(durationUs)
+}
+
+// SnapshotAll returns a snapshot of all per-model counters. Each model's max
+// is reset on read, consistent with Counters.Snapshot behaviour.
+func (m *CounterMap) SnapshotAll() map[string]Snapshot {
+	result := make(map[string]Snapshot)
+	m.models.Range(func(key, value any) bool {
+		result[key.(string)] = value.(*Counters).Snapshot()
+		return true
+	})
+	return result
+}
+
+// PeekSnapshot is a non-destructive point-in-time view of a model's counters.
+// Unlike Snapshot, it does not reset InvokeMaxUs on read.
+type PeekSnapshot struct {
+	InvokeCount   int64
+	InvokeTotalUs int64
+	InvokeMaxUs   int64
+}
+
+// PeekAll returns a non-destructive snapshot of all per-model counters.
+// Unlike SnapshotAll, it uses Load() instead of Swap(0) for InvokeMaxUs,
+// so the metrics collector's data is not affected.
+func (m *CounterMap) PeekAll() map[string]PeekSnapshot {
+	result := make(map[string]PeekSnapshot)
+	m.models.Range(func(key, value any) bool {
+		c := value.(*Counters)
+		result[key.(string)] = PeekSnapshot{
+			InvokeCount:   c.InvokeCount.Load(),
+			InvokeTotalUs: c.InvokeTotalUs.Load(),
+			InvokeMaxUs:   c.InvokeMaxUs.Load(),
+		}
+		return true
+	})
+	return result
+}
+
+// Delete removes the counters for the given model ID.
+func (m *CounterMap) Delete(modelID string) {
+	m.models.Delete(modelID)
 }

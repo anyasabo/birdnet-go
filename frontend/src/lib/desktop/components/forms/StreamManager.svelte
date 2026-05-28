@@ -26,7 +26,9 @@
   import { validateProtocolURL, sanitizeUrlForComparison } from '$lib/utils/security';
   import { toastActions } from '$lib/stores/toast';
   import { quietHoursStore } from '$lib/stores/quietHours.svelte';
+  import { getAvailableModels, DEFAULT_MODEL_ID, fetchModels } from '$lib/stores/models.svelte';
   import StreamCard, { type StreamStatus } from './StreamCard.svelte';
+  import ModelCheckboxList from './ModelCheckboxList.svelte';
   import StatusPill from '$lib/desktop/components/ui/StatusPill.svelte';
   import EmptyState from '$lib/desktop/features/settings/components/EmptyState.svelte';
   import SelectDropdown from './SelectDropdown.svelte';
@@ -34,8 +36,15 @@
   import QuietHoursEditor from './QuietHoursEditor.svelte';
   import type { StreamConfig, StreamType, QuietHoursConfig } from '$lib/stores/settings';
   import { defaultQuietHoursConfig } from '$lib/stores/settings';
+  import StreamTestButton from './StreamTestButton.svelte';
 
   const logger = loggers.audio;
+
+  const availableModels = $derived(getAvailableModels());
+
+  $effect(() => {
+    return fetchModels();
+  });
 
   // Maximum allowed URL length for stream configuration
   const MAX_STREAM_URL_LENGTH = 2048;
@@ -114,9 +123,12 @@
   let newUrl = $state('');
   let newTransport = $state<'tcp' | 'udp'>('tcp');
   let newStreamType = $state<StreamType>('rtsp');
+  let newModels = $state<string[]>([DEFAULT_MODEL_ID]);
   let newQuietHours = $state<QuietHoursConfig>({ ...defaultQuietHoursConfig });
   let nameError = $state<string | null>(null);
   let urlError = $state<string | null>(null);
+  let newTestResult = $state<{ sampleRate: number } | null>(null);
+  let newSourceSampleRate = $derived(newTestResult?.sampleRate ?? 48000);
 
   // SSE connection for real-time health updates
   let eventSource: ReconnectingEventSource | null = null;
@@ -389,6 +401,7 @@
       url: trimmedUrl,
       enabled: true,
       type: newStreamType,
+      models: newModels,
       ...(showTransportInAdd ? { transport: newTransport } : {}),
       quietHours: newQuietHours,
     } as StreamConfig;
@@ -402,7 +415,9 @@
     newUrl = '';
     newTransport = 'tcp';
     newStreamType = 'rtsp';
+    newModels = [DEFAULT_MODEL_ID];
     newQuietHours = { ...defaultQuietHoursConfig };
+    newTestResult = null;
     clearErrors();
     showAddForm = false;
 
@@ -574,6 +589,7 @@
           {stream}
           {index}
           status={getStreamStatus(stream.url, stream)}
+          {availableModels}
           {disabled}
           onUpdate={updatedStream => updateStream(index, updatedStream)}
           onDelete={() => deleteStream(index)}
@@ -637,6 +653,15 @@
               {/if}
             </div>
 
+            <!-- Test Stream -->
+            <StreamTestButton
+              url={newUrl}
+              models={availableModels}
+              selectedModels={newModels}
+              {disabled}
+              onResult={result => (newTestResult = result)}
+            />
+
             <!-- Stream Type and Protocol -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <SelectDropdown
@@ -662,6 +687,16 @@
               {/if}
             </div>
 
+            <!-- Model Selection -->
+            <ModelCheckboxList
+              models={availableModels}
+              selectedModels={newModels}
+              sourceSampleRate={newSourceSampleRate}
+              isStream={true}
+              {disabled}
+              onToggle={models => (newModels = models)}
+            />
+
             <!-- Quiet Hours -->
             <QuietHoursEditor
               config={newQuietHours}
@@ -681,21 +716,29 @@
                   newUrl = '';
                   newStreamType = 'rtsp';
                   newTransport = 'tcp';
+                  newModels = [DEFAULT_MODEL_ID];
                   newQuietHours = { ...defaultQuietHoursConfig };
+                  newTestResult = null;
                   clearErrors();
                 }}
               >
                 {t('common.cancel')}
               </button>
-              <button
-                type="button"
-                class="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md cursor-pointer transition-all bg-[var(--color-primary)] text-[var(--color-primary-content)] border border-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
-                onclick={addStream}
-                disabled={!newName.trim() || !newUrl.trim() || disabled}
+              <span
+                title={!newTestResult && newUrl.trim()
+                  ? t('settings.audio.streams.testRequired')
+                  : undefined}
               >
-                <Plus class="size-4" />
-                {t('settings.audio.streams.addStream')}
-              </button>
+                <button
+                  type="button"
+                  class="inline-flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md cursor-pointer transition-all bg-[var(--color-primary)] text-[var(--color-primary-content)] border border-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  onclick={addStream}
+                  disabled={!newName.trim() || !newUrl.trim() || !newTestResult || disabled}
+                >
+                  <Plus class="size-4" />
+                  {t('settings.audio.streams.addStream')}
+                </button>
+              </span>
             </div>
           </div>
         </div>

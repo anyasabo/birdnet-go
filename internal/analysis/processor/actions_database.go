@@ -7,12 +7,16 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
+	"github.com/tphakala/birdnet-go/internal/analysis/species"
 	"github.com/tphakala/birdnet-go/internal/audiocore/convert"
 	"github.com/tphakala/birdnet-go/internal/audiocore/ffmpeg"
+	"github.com/tphakala/birdnet-go/internal/audiocore/resample"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/datastore"
+	"github.com/tphakala/birdnet-go/internal/datastore/v2/entities"
 	"github.com/tphakala/birdnet-go/internal/detection"
 	"github.com/tphakala/birdnet-go/internal/errors"
 	"github.com/tphakala/birdnet-go/internal/events"
@@ -84,10 +88,11 @@ func (a *DatabaseAction) ExecuteContext(ctx context.Context, _ any) error {
 	// Check if this is a new species and update atomically to prevent race conditions
 	var isNewSpecies bool
 	var daysSinceFirstSeen int
+	var novelty species.NoveltyStatus
 	if a.NewSpeciesTracker != nil {
 		// Use atomic check-and-update to prevent duplicate "new species" notifications
 		// when multiple detections of the same species arrive concurrently
-		isNewSpecies, daysSinceFirstSeen = a.NewSpeciesTracker.CheckAndUpdateSpecies(a.Result.Species.ScientificName, a.Result.BeginTime)
+		isNewSpecies, daysSinceFirstSeen, novelty = a.NewSpeciesTracker.CheckAndUpdateSpeciesWithNovelty(a.Result.Species.ScientificName, a.Result.BeginTime)
 	}
 
 	// Save detection to database using preferred path
@@ -149,8 +154,23 @@ func (a *DatabaseAction) ExecuteContext(ctx context.Context, _ any) error {
 		a.DetectionCtx.NoteID.Store(uint64(a.Result.ID))
 	}
 
+	// Add an explanatory comment when the ultrasonic validation filter tagged this detection as unlikely.
+	if a.Result.Unlikely && a.Result.ID != 0 && a.Repo != nil {
+		locale := a.Settings.Realtime.Dashboard.Locale
+		comment := formatUnlikelyComment(locale, a.Result.UltrasonicCV, a.Result.UltrasonicCVThreshold)
+		noteID := strconv.FormatUint(uint64(a.Result.ID), 10)
+		if err := a.Repo.AddComment(ctx, noteID, comment); err != nil {
+			GetLogger().Warn("failed to add unlikely comment to detection",
+				logger.String("detection_id", a.CorrelationID),
+				logger.Uint64("note_id", uint64(a.Result.ID)),
+				logger.String("species", a.Result.Species.CommonName),
+				logger.Error(err),
+				logger.String("operation", "unlikely_comment"))
+		}
+	}
+
 	// After successful save, publish detection event to the event bus.
-	a.publishDetectionEvent(isNewSpecies, daysSinceFirstSeen)
+	a.publishDetectionEvent(isNewSpecies, daysSinceFirstSeen, novelty)
 
 	// NOTE: Audio export is intentionally NOT performed here.
 	// It runs as a separate action (SaveAudioAction) outside the CompositeAction
@@ -218,7 +238,7 @@ func (a *DatabaseAction) createDetectionEvent(isNewSpecies bool, daysSinceFirstS
 }
 
 // populateEventMetadata adds location, time, note ID, and image URL to event metadata.
-func (a *DatabaseAction) populateEventMetadata(detectionEvent events.DetectionEvent) {
+func (a *DatabaseAction) populateEventMetadata(detectionEvent events.DetectionEvent, novelty species.NoveltyStatus) {
 	metadata := detectionEvent.GetMetadata()
 	if metadata == nil {
 		GetLogger().Error("Detection event metadata is nil",
@@ -234,12 +254,29 @@ func (a *DatabaseAction) populateEventMetadata(detectionEvent events.DetectionEv
 	metadata["latitude"] = a.Result.Latitude
 	metadata["longitude"] = a.Result.Longitude
 	metadata["begin_time"] = a.Result.BeginTime
+	if hasNoveltyStatus(novelty) {
+		if novelty.DaysSinceLastSeen >= 0 {
+			metadata[events.DetectionMetadataDaysSinceLastSeen] = novelty.DaysSinceLastSeen
+		}
+		if novelty.NoveltyEpisodeActive {
+			metadata[events.DetectionMetadataNoveltyEpisodeDays] = novelty.NoveltyEpisodeDays
+			if !novelty.NoveltyEpisodeStart.IsZero() {
+				metadata[events.DetectionMetadataNoveltyEpisodeStart] = novelty.NoveltyEpisodeStart.Format(time.RFC3339)
+			}
+		}
+	}
 
 	if a.processor != nil && a.processor.BirdImageCache != nil {
 		if birdImage, err := a.processor.BirdImageCache.Get(a.Result.Species.ScientificName); err == nil && birdImage.URL != "" {
 			metadata["image_url"] = birdImage.URL
 		}
 	}
+}
+
+func hasNoveltyStatus(novelty species.NoveltyStatus) bool {
+	// Inactive same-day detections intentionally omit novelty metadata; active
+	// episodes still publish days_since_last_seen=0 for same-day episode repeats.
+	return novelty.NoveltyEpisodeActive || novelty.DaysSinceLastSeen > 0
 }
 
 // recordNotificationSent records that a notification was sent and logs debug info.
@@ -263,7 +300,7 @@ func (a *DatabaseAction) recordNotificationSent(notificationTime time.Time) {
 // publishDetectionEvent publishes a detection event to the event bus.
 // All detections are published so that alert rules on detection.occurred can fire.
 // New species detections additionally go through suppression and notification recording.
-func (a *DatabaseAction) publishDetectionEvent(isNewSpecies bool, daysSinceFirstSeen int) {
+func (a *DatabaseAction) publishDetectionEvent(isNewSpecies bool, daysSinceFirstSeen int, novelty species.NoveltyStatus) {
 	if !events.IsInitialized() {
 		return
 	}
@@ -278,7 +315,7 @@ func (a *DatabaseAction) publishDetectionEvent(isNewSpecies bool, daysSinceFirst
 		if !suppress {
 			detectionEvent := a.createDetectionEvent(true, daysSinceFirstSeen)
 			if detectionEvent != nil {
-				a.populateEventMetadata(detectionEvent)
+				a.populateEventMetadata(detectionEvent, novelty)
 				if published := eventBus.TryPublishDetection(detectionEvent); published {
 					a.recordNotificationSent(notificationTime)
 				}
@@ -294,7 +331,7 @@ func (a *DatabaseAction) publishDetectionEvent(isNewSpecies bool, daysSinceFirst
 		return
 	}
 
-	a.populateEventMetadata(detectionEvent)
+	a.populateEventMetadata(detectionEvent, novelty)
 	eventBus.TryPublishDetection(detectionEvent)
 }
 
@@ -378,8 +415,10 @@ func (a *SaveAudioAction) Execute(ctx context.Context, _ any) error {
 		return err
 	}
 
-	if a.Settings.Realtime.Audio.Export.Type == "wav" {
-		if err := convert.SavePCMDataToWAV(outputPath, a.pcmData, conf.SampleRate, conf.BitDepth); err != nil {
+	exportRate, exportFormat, outputPath := a.resolveExportParams(outputPath)
+
+	if exportFormat == "wav" {
+		if err := convert.SavePCMDataToWAV(outputPath, a.pcmData, exportRate, conf.BitDepth); err != nil {
 			return err
 		}
 	} else {
@@ -387,9 +426,9 @@ func (a *SaveAudioAction) Execute(ctx context.Context, _ any) error {
 		opts := &ffmpeg.ExportOptions{
 			PCMData:    a.pcmData,
 			OutputPath: outputPath,
-			Format:     exportSettings.Type,
+			Format:     exportFormat,
 			Bitrate:    exportSettings.Bitrate,
-			SampleRate: conf.SampleRate,
+			SampleRate: exportRate,
 			Channels:   conf.NumChannels,
 			BitDepth:   conf.BitDepth,
 			FFmpegPath: a.Settings.Realtime.Audio.FfmpegPath,
@@ -426,9 +465,10 @@ func (a *SaveAudioAction) Execute(ctx context.Context, _ any) error {
 	GetLogger().Info("Audio clip saved successfully",
 		logger.String("component", "analysis.processor.actions"),
 		logger.String("detection_id", a.CorrelationID),
-		logger.String("clip_path", a.ClipName),
+		logger.String("clip_path", filepath.Base(outputPath)),
 		logger.Int64("file_size_bytes", fileSize),
-		logger.String("format", a.Settings.Realtime.Audio.Export.Type),
+		logger.String("format", exportFormat),
+		logger.Int("sample_rate", exportRate),
 		logger.String("operation", "audio_export_success"))
 
 	// Signal that the clip file exists on disk. This is used by any late
@@ -441,14 +481,15 @@ func (a *SaveAudioAction) Execute(ctx context.Context, _ any) error {
 	if a.Settings.Realtime.Dashboard.Spectrogram.Enabled && a.PreRenderer != nil {
 		// Create pre-render job using local DTO (avoids direct spectrogram dependency)
 		job := PreRenderJob{
-			PCMData:   a.pcmData,
-			ClipPath:  outputPath, // Use full path to audio file
-			NoteID:    a.NoteID,
-			Timestamp: time.Now(),
+			PCMData:    a.pcmData,
+			SampleRate: exportRate,
+			ClipPath:   outputPath, // Use full path to audio file
+			NoteID:     a.NoteID,
+			Timestamp:  time.Now(),
 		}
 
 		// Non-blocking submission - errors logged but don't fail action
-		if err := a.PreRenderer.Submit(job); err != nil {
+		if err := a.PreRenderer.Submit(&job); err != nil {
 			GetLogger().Warn("Failed to submit spectrogram pre-render job",
 				logger.String("component", "analysis.processor.actions"),
 				logger.String("detection_id", a.CorrelationID),
@@ -460,4 +501,68 @@ func (a *SaveAudioAction) Execute(ctx context.Context, _ any) error {
 	}
 
 	return nil
+}
+
+// resolveExportParams determines the export sample rate, format, and output
+// path. Bird audio at rates above 48kHz is downsampled. Bat audio keeps the
+// native rate; if the configured format cannot carry it, the format is
+// silently switched to WAV.
+func (a *SaveAudioAction) resolveExportParams(outputPath string) (rate int, format, path string) {
+	rate = a.sourceSampleRate
+	if rate <= 0 {
+		rate = conf.SampleRate
+	}
+
+	format = a.Settings.Realtime.Audio.Export.Type
+	path = outputPath
+
+	isBat := detection.ResolveModelType(a.modelName, "") == entities.ModelTypeBat
+
+	if needsBatFormatFallback(a.modelName, "", rate, format) {
+		format = "wav"
+		path = replaceExtension(path, ".wav")
+	} else if rate > conf.SampleRate && !isBat {
+		resampled, err := resample.ResampleBytes(a.pcmData, rate, conf.SampleRate)
+		if err != nil {
+			GetLogger().Warn("Resampling failed, exporting at source rate",
+				logger.String("component", "analysis.processor.actions"),
+				logger.String("detection_id", a.CorrelationID),
+				logger.Int("source_rate", rate),
+				logger.Int("target_rate", conf.SampleRate),
+				logger.Error(err),
+				logger.String("operation", "audio_export_resample"))
+		} else {
+			a.pcmData = resampled
+			a.sourceSampleRate = conf.SampleRate
+			rate = conf.SampleRate
+		}
+	}
+
+	return rate, format, path
+}
+
+// replaceExtension swaps the file extension on path (e.g. ".mp3" -> ".wav").
+func replaceExtension(path, newExt string) string {
+	ext := filepath.Ext(path)
+	if ext == "" {
+		return path + newExt
+	}
+	return path[:len(path)-len(ext)] + newExt
+}
+
+// needsBatFormatFallback returns true when the model is a bat classifier
+// and the actual source sample rate exceeds what the configured export
+// format can carry (MP3/Opus/AAC cap at 48kHz).
+func needsBatFormatFallback(modelName, modelVersion string, sourceRate int, exportFormat string) bool {
+	if detection.ResolveModelType(modelName, modelVersion) != entities.ModelTypeBat {
+		return false
+	}
+	if sourceRate <= conf.SampleRate {
+		return false
+	}
+	switch exportFormat {
+	case "mp3", "opus", "aac":
+		return true
+	}
+	return false
 }

@@ -1,5 +1,3 @@
-//go:build onnx
-
 package onnx
 
 import (
@@ -24,12 +22,13 @@ type Classifier struct {
 type ClassifierOption func(*classifierConfig)
 
 type classifierConfig struct {
-	modelType     *ModelType
-	labels        []string
-	labelsPath    string
-	topK          int
-	minConf       float32
-	sessionOptsFn func(*ort.SessionOptions)
+	modelType           *ModelType
+	labels              []string
+	labelsPath          string
+	topK                int
+	minConf             float32
+	sessionOptsFn       func(*ort.SessionOptions)
+	skipLabelValidation bool
 }
 
 func defaultClassifierConfig() *classifierConfig {
@@ -62,6 +61,13 @@ func WithTopK(k int) ClassifierOption {
 // WithMinConfidence sets the minimum confidence threshold. Default: 0.0.
 func WithMinConfidence(threshold float32) ClassifierOption {
 	return func(c *classifierConfig) { c.minConf = threshold }
+}
+
+// WithSkipLabelValidation disables the label-count-vs-model-output check.
+// Use when the model is loaded only for embedding extraction and the caller's
+// label list may not match the model's logits output dimension.
+func WithSkipLabelValidation() ClassifierOption {
+	return func(c *classifierConfig) { c.skipLabelValidation = true }
 }
 
 // WithSessionOptions provides a callback to configure the ONNX Runtime session options.
@@ -97,15 +103,21 @@ func NewClassifier(modelPath string, opts ...ClassifierOption) (*Classifier, err
 	}
 
 	// Build model config and load labels
-	modelCfg := buildModelConfig(mt, inputShapes[0], len(outputNames))
+	outputShapes := make([][]int64, len(outputInfos))
+	for i := range outputInfos {
+		outputShapes[i] = outputInfos[i].Dimensions
+	}
+	modelCfg := buildModelConfig(mt, inputShapes[0], outputShapes)
 
 	labels, err := resolveLabels(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := validateLabelCount(&modelCfg, outputInfos, len(labels)); err != nil {
-		return nil, err
+	if !cfg.skipLabelValidation {
+		if err := validateLabelCount(&modelCfg, outputInfos, len(labels)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Create ONNX session
@@ -216,7 +228,7 @@ func resolveLabels(cfg *classifierConfig) ([]string, error) {
 		return cfg.labels, nil
 	}
 	if cfg.labelsPath != "" {
-		return loadLabels(cfg.labelsPath)
+		return LoadLabels(cfg.labelsPath)
 	}
 	return nil, ErrLabelsRequired
 }
@@ -239,48 +251,76 @@ func (c *Classifier) Labels() []string {
 // PredictRaw runs inference and returns raw logits (pre-activation) for a single segment.
 // This is used by adapters that handle their own post-processing (e.g., sensitivity-adjusted sigmoid).
 func (c *Classifier) PredictRaw(audio []float32) ([]float32, error) {
+	logits, _, err := c.PredictRawWithEmbeddings(audio)
+	return logits, err
+}
+
+// PredictRawWithEmbeddings runs inference and returns both raw logits and embedding vector.
+// Returns nil embeddings if the model does not produce embeddings.
+func (c *Classifier) PredictRawWithEmbeddings(audio []float32) (logits, embeddings []float32, err error) {
+	if c.session == nil {
+		return nil, nil, ErrSessionClosed
+	}
 	if len(audio) != c.config.SampleCount {
-		return nil, &InputSizeError{Expected: c.config.SampleCount, Got: len(audio)}
+		return nil, nil, &InputSizeError{Expected: c.config.SampleCount, Got: len(audio)}
 	}
 
 	inputShape := makeBatchInputShape(c.config.InputShape, 1)
 	inputTensor, err := ort.NewTensor(ort.NewShape(inputShape...), audio)
 	if err != nil {
-		return nil, fmt.Errorf("birdnet: failed to create input tensor: %w", err)
+		return nil, nil, fmt.Errorf("birdnet: failed to create input tensor: %w", err)
 	}
 	defer func() { _ = inputTensor.Destroy() }()
 
 	outputs, err := c.createOutputTensors(1)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer destroyTensors(outputs)
 
 	err = c.session.Run([]ort.Value{inputTensor}, outputs)
 	if err != nil {
-		return nil, fmt.Errorf("birdnet: inference failed: %w", err)
+		return nil, nil, fmt.Errorf("birdnet: inference failed: %w", err)
 	}
 
-	// Extract raw logits without applying activation function
 	logitsTensor, ok := outputs[c.config.LogitsIndex].(*ort.Tensor[float32])
 	if !ok {
-		return nil, fmt.Errorf("birdnet: logits tensor has unexpected type")
+		return nil, nil, fmt.Errorf("birdnet: logits tensor has unexpected type")
 	}
 	allLogits := logitsTensor.GetData()
-	numClasses := len(c.labels)
-	if numClasses > len(allLogits) {
-		return nil, fmt.Errorf("birdnet: logits tensor too small: need %d, have %d", numClasses, len(allLogits))
+	logitsSize := c.config.LogitsSize
+	if logitsSize <= 0 {
+		return nil, nil, fmt.Errorf("birdnet: invalid logits size %d", logitsSize)
+	}
+	if logitsSize > len(allLogits) {
+		return nil, nil, fmt.Errorf("birdnet: logits tensor too small: need %d, have %d", logitsSize, len(allLogits))
+	}
+	logits = make([]float32, logitsSize)
+	copy(logits, allLogits[:logitsSize])
+
+	if c.config.EmbeddingIndex >= 0 {
+		embTensor, ok := outputs[c.config.EmbeddingIndex].(*ort.Tensor[float32])
+		if !ok {
+			return nil, nil, fmt.Errorf("birdnet: embedding tensor has unexpected type")
+		}
+		allEmb := embTensor.GetData()
+		if c.config.EmbeddingSize > len(allEmb) {
+			return nil, nil, fmt.Errorf("birdnet: embedding tensor too small: need %d, have %d", c.config.EmbeddingSize, len(allEmb))
+		}
+		embeddings = make([]float32, c.config.EmbeddingSize)
+		copy(embeddings, allEmb[:c.config.EmbeddingSize])
 	}
 
-	logits := make([]float32, numClasses)
-	copy(logits, allLogits[:numClasses])
-	return logits, nil
+	return logits, embeddings, nil
 }
 
 // Predict runs inference on a single audio segment.
 // The audio slice must contain exactly Config().SampleCount float32 samples
 // (mono, at the model's sample rate, normalized to [-1.0, 1.0]).
 func (c *Classifier) Predict(audio []float32) (*Result, error) {
+	if c.session == nil {
+		return nil, ErrSessionClosed
+	}
 	if len(audio) != c.config.SampleCount {
 		return nil, &InputSizeError{Expected: c.config.SampleCount, Got: len(audio)}
 	}
@@ -318,6 +358,9 @@ func (c *Classifier) Predict(audio []float32) (*Result, error) {
 // PredictBatch runs inference on multiple audio segments in a single batch.
 // Each segment must contain exactly Config().SampleCount samples.
 func (c *Classifier) PredictBatch(segments [][]float32) ([]*Result, error) {
+	if c.session == nil {
+		return nil, ErrSessionClosed
+	}
 	if len(segments) == 0 {
 		return nil, ErrEmptyBatch
 	}
@@ -416,13 +459,20 @@ func (c *Classifier) outputShape(outputIdx, batchSize int) ([]int64, error) {
 	batch := int64(batchSize)
 	switch c.config.Type {
 	case BirdNETv24:
-		return []int64{batch, int64(len(c.labels))}, nil
+		switch outputIdx {
+		case 0:
+			return []int64{batch, int64(c.config.LogitsSize)}, nil
+		case 1:
+			if c.config.EmbeddingSize > 0 {
+				return []int64{batch, int64(c.config.EmbeddingSize)}, nil
+			}
+		}
 	case BirdNETv30:
 		switch outputIdx {
 		case 0:
 			return []int64{batch, int64(c.config.EmbeddingSize)}, nil
 		case 1:
-			return []int64{batch, int64(len(c.labels))}, nil
+			return []int64{batch, int64(c.config.LogitsSize)}, nil
 		}
 	case PerchV2:
 		switch outputIdx {
@@ -433,7 +483,7 @@ func (c *Classifier) outputShape(outputIdx, batchSize int) ([]int64, error) {
 		case 2:
 			return []int64{batch, 500, 128}, nil
 		case 3:
-			return []int64{batch, int64(len(c.labels))}, nil
+			return []int64{batch, int64(c.config.LogitsSize)}, nil
 		}
 	}
 	return nil, fmt.Errorf("birdnet: unexpected output index %d for model %s", outputIdx, c.config.Type)
@@ -446,9 +496,12 @@ func (c *Classifier) processOutput(outputs []ort.Value, batchIdx int) (*Result, 
 		return nil, fmt.Errorf("birdnet: logits tensor has unexpected type")
 	}
 	allLogits := logitsTensor.GetData()
-	numClasses := len(c.labels)
-	start := batchIdx * numClasses
-	end := start + numClasses
+	stride := c.config.LogitsSize
+	if stride <= 0 {
+		return nil, fmt.Errorf("birdnet: invalid logits size %d", stride)
+	}
+	start := batchIdx * stride
+	end := start + stride
 	if end > len(allLogits) {
 		return nil, fmt.Errorf("birdnet: logits tensor too small for batch index %d", batchIdx)
 	}

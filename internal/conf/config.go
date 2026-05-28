@@ -82,13 +82,14 @@ type SoundLevelSettings struct {
 
 // AudioSourceConfig represents a single audio capture device with per-source settings.
 type AudioSourceConfig struct {
-	Name       string             `yaml:"name" json:"name" mapstructure:"name"`                                    // Required: descriptive name like "Front Yard Mic"
-	Device     string             `yaml:"device" json:"device" mapstructure:"device"`                              // Required: ALSA device ID (e.g., "sysdefault", "hw:0,0", "Loopback")
-	Gain       float64            `yaml:"gain" json:"gain" mapstructure:"gain"`                                    // Input gain in dB (0 = no adjustment)
-	Model      string             `yaml:"model,omitempty" json:"model,omitempty" mapstructure:"model"`             // AI model: "" or "birdnet" (default), "perch_v2", "bat" (future)
-	Models     []string           `yaml:"models,omitempty" json:"models,omitempty" mapstructure:"models"`          // Model IDs for this source (e.g., ["birdnet", "perch_v2"])
-	Equalizer  *EqualizerSettings `yaml:"equalizer,omitempty" json:"equalizer,omitempty" mapstructure:"equalizer"` // Per-source EQ (nil = use global)
-	QuietHours QuietHoursConfig   `yaml:"quietHours" json:"quietHours" mapstructure:"quietHours"`                  // Per-source quiet hours
+	Name       string             `yaml:"name" json:"name" mapstructure:"name"`                                       // Required: descriptive name like "Front Yard Mic"
+	Device     string             `yaml:"device" json:"device" mapstructure:"device"`                                 // Required: ALSA device ID (e.g., "sysdefault", "hw:0,0", "Loopback")
+	SampleRate int                `yaml:"samplerate,omitempty" json:"sampleRate,omitempty" mapstructure:"samplerate"` // Capture rate in Hz (0 = default 48000; set 256000 for bat detectors)
+	Gain       float64            `yaml:"gain" json:"gain" mapstructure:"gain"`                                       // Input gain in dB (0 = no adjustment)
+	Model      string             `yaml:"model,omitempty" json:"model,omitempty" mapstructure:"model"`                // AI model: "" or "birdnet" (default), "perch_v2", "bat" (future)
+	Models     []string           `yaml:"models,omitempty" json:"models,omitempty" mapstructure:"models"`             // Model IDs for this source (e.g., ["birdnet", "perch_v2"])
+	Equalizer  *EqualizerSettings `yaml:"equalizer,omitempty" json:"equalizer,omitempty" mapstructure:"equalizer"`    // Per-source EQ (nil = use global)
+	QuietHours QuietHoursConfig   `yaml:"quietHours" json:"quietHours" mapstructure:"quietHours"`                     // Per-source quiet hours
 }
 
 type AudioSettings struct {
@@ -100,12 +101,26 @@ type AudioSettings struct {
 	FfmpegMinor     int                 `yaml:"-" json:"ffmpegMinor,omitempty"`                                 // ffmpeg minor version number, runtime value
 	SoxPath         string              `yaml:"soxpath" mapstructure:"soxpath" json:"soxPath"`                  // path to sox, runtime value
 	SoxAudioTypes   []string            `yaml:"-" json:"-"`                                                     // supported audio types of sox, runtime value
+	FfprobePath     string              `yaml:"-" json:"-"`                                                     // path to ffprobe, derived from ffmpeg path at runtime
 	StreamTransport string              `yaml:"streamtransport" json:"streamTransport"`                         // preferred transport for audio streaming: "auto", "sse", or "ws"
 	Export          ExportSettings      `yaml:"export" json:"export"`                                           // export settings
 	SoundLevel      SoundLevelSettings  `yaml:"soundlevel" json:"soundLevel"`                                   // sound level monitoring settings
 
 	Equalizer  EqualizerSettings `yaml:"equalizer" json:"equalizer"`                             // equalizer settings (global default)
 	QuietHours QuietHoursConfig  `yaml:"quietHours" json:"quietHours" mapstructure:"quietHours"` // quiet hours (global default, legacy)
+	Watchdog   WatchdogSettings  `yaml:"watchdog" json:"watchdog" mapstructure:"watchdog"`       // liveness watchdog tuning (0 = use default)
+}
+
+// WatchdogSettings holds user-tunable parameters for the audio liveness watchdog.
+// All fields are in seconds (except MaxRetries which is a count). Zero values
+// mean "use production default", so existing configs work without changes.
+type WatchdogSettings struct {
+	CheckInterval     int `yaml:"checkInterval" json:"checkInterval" mapstructure:"checkInterval"`             // tick period (default 10s)
+	SilenceThreshold  int `yaml:"silenceThreshold" json:"silenceThreshold" mapstructure:"silenceThreshold"`    // silence before alarm (default 30s)
+	MaxRetries        int `yaml:"maxRetries" json:"maxRetries" mapstructure:"maxRetries"`                      // restart attempts before escalation (default 3)
+	RetryBackoff      int `yaml:"retryBackoff" json:"retryBackoff" mapstructure:"retryBackoff"`                // wait between retries (default 5s)
+	Cooldown          int `yaml:"cooldown" json:"cooldown" mapstructure:"cooldown"`                            // alarm suppression after recovery (default 60s)
+	EscalationTimeout int `yaml:"escalationTimeout" json:"escalationTimeout" mapstructure:"escalationTimeout"` // time in ESCALATED before FAILED (default 60s)
 }
 
 // FindSourceByID returns a pointer to the AudioSourceConfig matching the given
@@ -894,43 +909,55 @@ func GetSeasonalTrackingWithHemisphere(settings SeasonalTrackingSettings, latitu
 	return settings
 }
 
-// isDefaultSeasonConfiguration checks if the given seasons map contains
-// default season names (spring/summer/fall/winter or wet1/dry1/wet2/dry2).
-// This helps distinguish between:
-// - Default seasons that should be updated based on hemisphere
-// - Custom seasons that should be preserved
-//
-// Returns true if the seasons appear to be a default configuration,
-// false if they appear to be custom user-defined seasons.
+// isDefaultSeasonConfiguration checks if the given seasons map exactly matches
+// one of the known default season configurations (NH, SH, or equatorial).
+// Both season names AND start dates must match for the configuration to be
+// considered default. This prevents overwriting user-customized dates when
+// the user keeps the standard season names but changes the start dates.
 func isDefaultSeasonConfiguration(seasons map[string]Season) bool {
 	if len(seasons) != 4 {
 		return false
 	}
 
-	// Check for traditional season names (Northern/Southern hemisphere)
-	traditionalSeasons := []string{"spring", "summer", "fall", "winter"}
-	hasTraditional := true
-	for _, name := range traditionalSeasons {
-		if _, exists := seasons[name]; !exists {
-			hasTraditional = false
-			break
-		}
-	}
-	if hasTraditional {
+	// Check traditional season names with Northern Hemisphere dates
+	if matchesSeasonSet(seasons, map[string]Season{
+		"spring": {StartMonth: 3, StartDay: 20},
+		"summer": {StartMonth: 6, StartDay: 21},
+		"fall":   {StartMonth: 9, StartDay: 22},
+		"winter": {StartMonth: 12, StartDay: 21},
+	}) {
 		return true
 	}
 
-	// Check for equatorial season names
-	equatorialSeasons := []string{"wet1", "dry1", "wet2", "dry2"}
-	hasEquatorial := true
-	for _, name := range equatorialSeasons {
-		if _, exists := seasons[name]; !exists {
-			hasEquatorial = false
-			break
-		}
+	// Check traditional season names with Southern Hemisphere dates
+	if matchesSeasonSet(seasons, map[string]Season{
+		"spring": {StartMonth: 9, StartDay: 22},
+		"summer": {StartMonth: 12, StartDay: 21},
+		"fall":   {StartMonth: 3, StartDay: 20},
+		"winter": {StartMonth: 6, StartDay: 21},
+	}) {
+		return true
 	}
 
-	return hasEquatorial
+	// Check equatorial season names and dates
+	return matchesSeasonSet(seasons, map[string]Season{
+		"wet1": {StartMonth: 3, StartDay: 1},
+		"dry1": {StartMonth: 6, StartDay: 1},
+		"wet2": {StartMonth: 9, StartDay: 1},
+		"dry2": {StartMonth: 12, StartDay: 1},
+	})
+}
+
+// matchesSeasonSet returns true if seasons contains exactly the same entries
+// (name, StartMonth, StartDay) as expected.
+func matchesSeasonSet(seasons, expected map[string]Season) bool {
+	for name, exp := range expected {
+		got, ok := seasons[name]
+		if !ok || got.StartMonth != exp.StartMonth || got.StartDay != exp.StartDay {
+			return false
+		}
+	}
+	return true
 }
 
 // GetDefaultSeasons returns default seasons based on hemisphere
@@ -1160,25 +1187,64 @@ type BirdNETConfig struct {
 
 // RangeFilterSettings contains settings for the range filter
 type RangeFilterSettings struct {
-	Debug       bool      `yaml:"debug" json:"debug"`         // true to enable debug mode
-	Model       string    `yaml:"model" json:"model"`         // range filter model version: "legacy" for v1, or empty/default for v2
-	ModelPath   string    `yaml:"modelpath" json:"modelPath"` // path to external meta model file (empty for embedded)
-	Threshold   float32   `yaml:"threshold" json:"threshold"` // rangefilter species occurrence threshold
-	Species     []string  `yaml:"-" json:"species,omitempty"` // list of included species, runtime value
-	LastUpdated time.Time `yaml:"-" json:"lastUpdated"`       // last time the species list was updated, runtime value
+	Debug                   bool                `yaml:"debug" json:"debug"`                               // true to enable debug mode
+	Model                   string              `yaml:"model" json:"model"`                               // range filter model version: "legacy" for v1, "v3" for geomodel v3.0, or empty/default for v2
+	ModelPath               string              `yaml:"modelpath" json:"modelPath"`                       // path to external meta model file (empty for embedded)
+	LabelsPath              string              `yaml:"labelspath,omitempty" json:"labelsPath,omitempty"` // path to geomodel labels file (required when geomodel differs from classifier labels)
+	Threshold               float32             `yaml:"threshold" json:"threshold"`                       // rangefilter species occurrence threshold
+	PassUnmappedSpecies     bool                `yaml:"passunmappedspecies" json:"passUnmappedSpecies"`   // true to pass through species absent from geomodel (score 1.0); false to filter them out (score 0.0)
+	Species                 []string            `yaml:"-" json:"species,omitempty"`                       // list of included species, runtime value
+	IncludedScientificNames map[string]struct{} `yaml:"-" json:"-"`                                       // O(1) lookup set of included scientific names (lowercase), runtime value
+	LastUpdated             time.Time           `yaml:"-" json:"lastUpdated"`                             // last time the species list was updated, runtime value
 }
 
 // PerchConfig holds configuration for the Google Perch v2 model.
 type PerchConfig struct {
-	Enabled   bool    `yaml:"enabled" json:"enabled"`                         // true to load Perch at startup
 	ModelPath string  `yaml:"modelpath,omitempty" json:"modelPath,omitempty"` // path to Perch v2 ONNX model file
 	LabelPath string  `yaml:"labelpath,omitempty" json:"labelPath,omitempty"` // path to Perch v2 label CSV file
 	Threshold float64 `yaml:"threshold" json:"threshold"`                     // confidence threshold for detections
+	Locale    string  `yaml:"locale,omitempty" json:"locale,omitempty"`       // locale for species label translation
 }
 
-// ModelsConfig holds global model enablement settings.
+// BatConfig holds configuration for bat detection using BirdNET v2.4 embeddings.
+type BatConfig struct {
+	EmbeddingModel      string                      `yaml:"embeddingmodel,omitempty" json:"embeddingModel,omitempty"`   // path to BirdNET v2.4 embeddings ONNX model
+	ClassifierModel     string                      `yaml:"classifiermodel,omitempty" json:"classifierModel,omitempty"` // path to bat species classifier ONNX model
+	LabelPath           string                      `yaml:"labelpath,omitempty" json:"labelPath,omitempty"`             // path to bat species labels file
+	Threshold           float64                     `yaml:"threshold" json:"threshold"`                                 // confidence threshold for bat detections
+	Locale              string                      `yaml:"locale,omitempty" json:"locale,omitempty"`                   // locale for species label translation
+	FilterEnabled       bool                        `yaml:"filterenabled" json:"filterEnabled"`                         // enable high-pass filter for bat audio
+	FilterCutoffHz      float64                     `yaml:"filtercutoffhz,omitempty" json:"filterCutoffHz,omitempty"`   // high-pass filter cutoff frequency in Hz
+	FilterPassCount     int                         `yaml:"filterpasscount,omitempty" json:"filterPassCount,omitempty"` // number of filter passes for steeper rolloff
+	NighttimeOnly       bool                        `yaml:"nighttimeonly" json:"nighttimeOnly"`                         // restrict bat detection to nighttime (civil dusk to civil dawn)
+	FalsePositiveFilter FalsePositiveFilterSettings `yaml:"falsepositivefilter" json:"falsePositiveFilter"`             // false positive filtering for bat detections (level 0-5)
+	UltrasonicFilter    UltrasonicFilterConfig      `yaml:"ultrasonicfilter" json:"ultrasonicFilter"`                   // post-detection ultrasonic validation filter
+}
+
+// UltrasonicFilterConfig controls the post-detection ultrasonic validation filter for bat detections.
+// The filter measures temporal variability of ultrasonic energy (US frame CV) in the source audio.
+// Real bat echolocation produces bursts of ultrasonic energy (high CV), while false positives
+// from audible-range sounds show flat ultrasonic energy at the noise floor (low CV).
+type UltrasonicFilterConfig struct {
+	Enabled          bool    `yaml:"enabled" json:"enabled"`                   // enable ultrasonic validation filter
+	CVThreshold      float64 `yaml:"cvthreshold" json:"cvThreshold"`           // detections with US frame CV below this are tagged unlikely
+	FFTSize          int     `yaml:"fftsize" json:"fftSize"`                   // FFT window size in samples (must be power of 2)
+	HopSize          int     `yaml:"hopsize" json:"hopSize"`                   // STFT hop size in samples
+	FrequencySplitHz int     `yaml:"frequencysplithz" json:"frequencySplitHz"` // boundary between audible and ultrasonic bands in Hz
+}
+
+// BSGConfig holds configuration for BSG regional bird models.
+type BSGConfig struct {
+	ModelPath string `yaml:"modelpath,omitempty" json:"modelPath,omitempty"` // path to BSG ONNX model file
+	LabelPath string `yaml:"labelpath,omitempty" json:"labelPath,omitempty"` // path to BSG label file
+	Locale    string `yaml:"locale,omitempty" json:"locale,omitempty"`       // locale for species label translation
+}
+
+// ModelsConfig holds global model enablement and management settings.
 type ModelsConfig struct {
-	Enabled []string `yaml:"enabled" json:"enabled"` // list of model IDs to load (e.g., "birdnet", "perch_v2")
+	Enabled   []string `yaml:"enabled" json:"enabled"`                         // list of model IDs to load (e.g., "birdnet", "perch_v2")
+	Directory string   `yaml:"directory,omitempty" json:"directory,omitempty"` // base directory for downloaded model files
+	Installed []string `yaml:"installed,omitempty" json:"installed,omitempty"` // list of installed model IDs managed by the model gallery
 }
 
 // BasicAuth holds settings for the password authentication
@@ -1497,7 +1563,9 @@ type Settings struct {
 
 	BirdNET BirdNETConfig `yaml:"birdnet" json:"birdnet"` // BirdNET configuration
 	Perch   PerchConfig   `yaml:"perch" json:"perch"`     // Perch v2 model configuration
-	Models  ModelsConfig  `yaml:"models" json:"models"`   // Global model enablement
+	Bat     BatConfig     `yaml:"bat" json:"bat"`         // Bat detection configuration
+	BSG     BSGConfig     `yaml:"bsg" json:"bsg"`         // BSG regional bird model configuration
+	Models  ModelsConfig  `yaml:"models" json:"models"`   // Global model enablement and management
 
 	TaxonomySynonyms map[string]string `yaml:"taxonomySynonyms" json:"taxonomySynonyms" mapstructure:"taxonomySynonyms"` // Optional scientific-name synonym overrides merged with built-ins
 

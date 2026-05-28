@@ -17,13 +17,28 @@
   @component
 -->
 <script lang="ts">
-  import { Settings, Trash2, Check, X, AlertCircle, Mic, Moon, ChevronDown } from '@lucide/svelte';
+  import { generateId } from '$lib/utils/uuid';
+  import {
+    Settings,
+    Trash2,
+    Check,
+    X,
+    AlertCircle,
+    AlertTriangle,
+    Info,
+    Mic,
+    Moon,
+    ChevronDown,
+  } from '@lucide/svelte';
   import { slide } from 'svelte/transition';
   import { t } from '$lib/i18n';
   import { cn } from '$lib/utils/cn';
   import { loggers } from '$lib/utils/logger';
+  import { fetchDeviceCapabilities as fetchCapabilities } from '$lib/utils/audio/sampleRate';
+  import { DEFAULT_MODEL_ID } from '$lib/stores/models.svelte';
   import SelectDropdown from './SelectDropdown.svelte';
   import InlineSlider from './InlineSlider.svelte';
+  import ModelCheckboxList from './ModelCheckboxList.svelte';
   import QuietHoursEditor from './QuietHoursEditor.svelte';
   import AudioEqualizerSettings from '$lib/desktop/features/settings/components/AudioEqualizerSettings.svelte';
   import type {
@@ -50,9 +65,6 @@
 
   const logger = loggers.audio;
 
-  // Default model ID — BirdNET v2.4 is the built-in default
-  const DEFAULT_MODEL_ID = 'birdnet';
-
   function getDefaultModels(): string[] {
     const defaultModel = modelOptions.find(m => m.value === DEFAULT_MODEL_ID);
     if (defaultModel) return [DEFAULT_MODEL_ID];
@@ -65,6 +77,13 @@
     sources: AudioSourceConfig[];
     audioDevices: Array<{ index: number; name: string; id: string }>;
     modelOptions: Array<{ value: string; label: string }>;
+    availableModels: Array<{
+      id: string;
+      name: string;
+      category: string;
+      minSampleRate?: number;
+      recommendedSampleRate?: number;
+    }>;
     disabled?: boolean;
     onUpdate: (_source: AudioSourceConfig) => boolean;
     onDelete: () => void;
@@ -76,6 +95,7 @@
     sources,
     audioDevices,
     modelOptions,
+    availableModels,
     disabled = false,
     onUpdate,
     onDelete,
@@ -91,6 +111,13 @@
   let editQuietHours = $state<QuietHoursConfig>({ ...defaultQuietHoursConfig });
   let showDeleteConfirm = $state(false);
   let showEqualizer = $state(false);
+  let editSampleRate = $state(48000);
+  let sampleRateOptions = $state<Array<{ value: string; label: string }>>([
+    { value: '48000', label: '48 kHz' },
+  ]);
+  let sampleRateVerified = $state(true);
+  let sampleRateLoading = $state(false);
+  let fetchController: AbortController | null = $state(null);
 
   // Device display name lookup
   let deviceDisplayName = $derived(
@@ -115,6 +142,9 @@
   function startEdit() {
     editName = source.name;
     editDevice = source.device;
+    editSampleRate = source.sampleRate || 48000;
+    prevEditDevice = source.device;
+    fetchDeviceCapabilities(source.device);
     editGain = source.gain;
     editModels = (source.models?.length ?? 0) > 0 ? [...source.models] : getDefaultModels();
     editEqualizer = source.equalizer
@@ -145,7 +175,7 @@
             enabled: editEqualizer.enabled,
             filters: editEqualizer.filters.map(f => ({
               ...f,
-              id: f.id || (crypto?.randomUUID?.() ?? Math.random().toString(36).substr(2, 9)),
+              id: f.id || generateId(),
             })),
           }
         : undefined;
@@ -153,6 +183,7 @@
     const updated: AudioSourceConfig = {
       name: trimmedName,
       device: editDevice,
+      sampleRate: editSampleRate,
       gain: editGain,
       models: editModels,
       equalizer: transformedEqualizer,
@@ -201,6 +232,33 @@
   function handleEqualizerUpdate(updated: LocalEqualizerSettings) {
     editEqualizer = updated;
   }
+
+  async function fetchDeviceCapabilities(deviceId: string) {
+    if (!deviceId) return;
+    fetchController?.abort();
+    fetchController = new AbortController();
+    sampleRateLoading = true;
+    try {
+      const result = await fetchCapabilities(deviceId, fetchController.signal);
+      sampleRateOptions = result.options;
+      sampleRateVerified = result.verified;
+    } catch {
+      // Only AbortError reaches here (utility handles all other failures internally)
+    } finally {
+      sampleRateLoading = false;
+    }
+  }
+
+  let prevEditDevice = '';
+  $effect(() => {
+    if (isEditing && editDevice && editDevice !== prevEditDevice) {
+      prevEditDevice = editDevice;
+      fetchDeviceCapabilities(editDevice);
+    }
+    return () => {
+      fetchController?.abort();
+    };
+  });
 </script>
 
 <div
@@ -283,30 +341,57 @@
           menuSize="sm"
         />
 
-        <!-- Gain and Model Row -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <InlineSlider
-            label={t('settings.audio.soundCards.gainLabel')}
-            value={editGain}
-            onUpdate={value => (editGain = value)}
-            min={-40}
-            max={40}
-            step={1}
-            unit=" dB"
-            {disabled}
-            className="h-full [&>input]:my-auto"
-          />
-
+        <!-- Sample Rate -->
+        <div>
           <SelectDropdown
-            value={editModels}
-            label={t('settings.audio.soundCards.modelLabel')}
-            options={modelOptions}
-            multiple={true}
-            onChange={value => (editModels = value as string[])}
+            value={String(editSampleRate)}
+            label={t('settings.audio.soundCards.sampleRateLabel')}
+            options={sampleRateOptions}
+            {disabled}
+            onChange={value => (editSampleRate = Number(value))}
             groupBy={false}
             menuSize="sm"
           />
+          {#if !sampleRateVerified && !sampleRateLoading}
+            <p class="flex items-center gap-1 text-xs text-[var(--color-warning)] mt-1">
+              <AlertTriangle class="size-3" />
+              {t('settings.audio.soundCards.sampleRateUnverified')}
+            </p>
+          {/if}
+          {#if sampleRateLoading}
+            <p class="text-xs text-[var(--color-base-content)]/60 mt-1 animate-pulse">
+              {t('settings.audio.soundCards.sampleRateProbing')}
+            </p>
+          {/if}
+          {#if editSampleRate > 48000}
+            <p class="flex items-center gap-1 text-xs text-[var(--color-info)] mt-1">
+              <Info class="size-3 shrink-0" />
+              {t('settings.audio.soundCards.sampleRateExclusive')}
+            </p>
+          {/if}
         </div>
+
+        <!-- Gain -->
+        <InlineSlider
+          label={t('settings.audio.soundCards.gainLabel')}
+          value={editGain}
+          onUpdate={value => (editGain = value)}
+          min={-40}
+          max={40}
+          step={1}
+          unit=" dB"
+          {disabled}
+        />
+
+        <!-- Model Selection -->
+        <ModelCheckboxList
+          models={availableModels}
+          selectedModels={editModels}
+          sourceSampleRate={editSampleRate}
+          isStream={false}
+          {disabled}
+          onToggle={models => (editModels = models)}
+        />
 
         <!-- Equalizer (expandable) -->
         <div>

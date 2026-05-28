@@ -91,7 +91,7 @@ func resolveAbsPath(cache *PathCache, path string) (string, error) {
 	return filepath.Abs(path)
 }
 
-// resolveSymlinks resolves symlinks for a path, using cache if available
+// resolveSymlinks resolves symlinks for a path, using cache if available.
 func resolveSymlinks(cache *PathCache, path string) string {
 	var resolved string
 	var err error
@@ -116,11 +116,13 @@ func resolveParentSymlinks(cache *PathCache, absTarget string) string {
 	for dir != "/" && dir != "." && dir != "" {
 		resolvedDir := resolveSymlinks(cache, dir)
 		if resolvedDir != dir {
-			// Found a parent directory that's a symlink
-			// Reconstruct the target with the resolved parent
 			return filepath.Join(resolvedDir, filepath.Base(absTarget))
 		}
-		dir = filepath.Dir(dir)
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
 	return absTarget
 }
@@ -218,7 +220,7 @@ func (sfs *SecureFS) RelativePath(path string) (string, error) {
 	}
 
 	// Using the cached version of IsPathWithinBase for better performance
-	cacheKey := fmt.Sprintf("%s|%s", sfs.baseDir, absPath)
+	cacheKey := sfs.baseDir + "|" + absPath
 	isWithin, err := sfs.cache.GetWithinBase(cacheKey, func() (bool, error) {
 		return IsPathWithinBaseWithCache(sfs.cache, sfs.baseDir, absPath)
 	})
@@ -278,7 +280,7 @@ func (sfs *SecureFS) createDirComponent(path string, perm os.FileMode) error {
 	return nil
 }
 
-// MkdirAll creates a directory and all necessary parent directories with path validation
+// MkdirAll creates a directory and all necessary parent directories with path validation.
 func (sfs *SecureFS) MkdirAll(path string, perm os.FileMode) error {
 	relPath, err := sfs.RelativePath(path)
 	if err != nil {

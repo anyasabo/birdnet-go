@@ -5,6 +5,7 @@ package conf
 import (
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -302,6 +303,17 @@ func (a *AudioSourceConfig) Validate() error {
 		return fmt.Errorf("audio source '%s': gain %.1f dB out of range [%.0f, +%.0f]", a.Name, a.Gain, MinAudioGain, MaxAudioGain)
 	}
 
+	// Validate sample rate if specified (0 means use default 48000)
+	// NOTE: These rates must stay in sync with audiocore.CandidateSampleRates.
+	if a.SampleRate != 0 {
+		validRates := map[int]struct{}{
+			48000: {}, 96000: {}, 192000: {}, 256000: {}, 384000: {},
+		}
+		if _, ok := validRates[a.SampleRate]; !ok {
+			return fmt.Errorf("audio source '%s': sample rate %d Hz is not a supported value (valid: 48000, 96000, 192000, 256000, 384000)", a.Name, a.SampleRate)
+		}
+	}
+
 	// Validate model identifier
 	if !ValidAudioModels[a.Model] {
 		return fmt.Errorf("audio source '%s': unknown model '%s'", a.Name, a.Model)
@@ -357,6 +369,7 @@ func (s *AudioSettings) clearFfmpegMetadata() {
 	s.FfmpegVersion = ""
 	s.FfmpegMajor = 0
 	s.FfmpegMinor = 0
+	s.FfprobePath = ""
 }
 
 // applyFfmpegFormatFallback forces WAV export when FFmpeg is unavailable and
@@ -381,8 +394,8 @@ func validateAudioSettings(settings *AudioSettings) error {
 	} else {
 		settings.FfmpegPath = validatedFfmpegPath // Store the validated path (explicit or from PATH)
 
-		// Detect FFmpeg version for runtime decisions (e.g., FFmpeg 5.x bug workarounds)
-		version, major, minor := GetFfmpegVersion()
+		// Detect FFmpeg version using the validated path (not PATH lookup)
+		version, major, minor := GetFfmpegVersionFrom(validatedFfmpegPath)
 		settings.FfmpegVersion = version
 		settings.FfmpegMajor = major
 		settings.FfmpegMinor = minor
@@ -392,20 +405,37 @@ func validateAudioSettings(settings *AudioSettings) error {
 		} else {
 			GetLogger().Warn("Could not detect FFmpeg version", logger.String("version_string", version))
 		}
+
+		// Derive ffprobe path from the validated ffmpeg path. FFprobe is a
+		// sibling binary in the same directory (e.g. ffmpeg.exe -> ffprobe.exe).
+		ffprobeDir := filepath.Dir(validatedFfmpegPath)
+		ffprobePath := filepath.Join(ffprobeDir, GetFfprobeBinaryName())
+		if info, statErr := os.Stat(ffprobePath); statErr == nil && !info.IsDir() {
+			settings.FfprobePath = ffprobePath
+			GetLogger().Debug("FFprobe path derived from FFmpeg", logger.String("ffprobe_path", ffprobePath))
+		} else {
+			if lookPath, lookErr := exec.LookPath(GetFfprobeBinaryName()); lookErr == nil {
+				settings.FfprobePath = lookPath
+				GetLogger().Debug("FFprobe found in system PATH", logger.String("ffprobe_path", lookPath))
+			} else {
+				settings.FfprobePath = ""
+				GetLogger().Warn("FFprobe not found alongside FFmpeg or in PATH",
+					logger.String("expected_path", ffprobePath),
+					logger.String("impact", "Audio validation via FFprobe will be disabled"))
+			}
+		}
 	}
 
-	// Validate and determine the effective SoX path
-	// We only need to know if it's available and its formats, so LookPath is sufficient here.
-	soxPath, soxLookPathErr := exec.LookPath(GetSoxBinaryName())
-	if soxLookPathErr != nil {
+	// Validate and determine the effective SoX path, using the same
+	// ValidateToolPath pattern as FFmpeg (configured path first, then PATH).
+	validatedSoxPath, soxErr := ValidateToolPath(settings.SoxPath, GetSoxBinaryName())
+	if soxErr != nil {
 		settings.SoxPath = ""
 		settings.SoxAudioTypes = nil
-		GetLogger().Warn("SoX not found in system PATH", logger.String("impact", "Audio source processing requiring SoX might be disabled"))
+		GetLogger().Warn("SoX not available", logger.Error(soxErr), logger.String("impact", "Spectrogram generation via SoX will be disabled"))
 	} else {
-		settings.SoxPath = soxPath
-		// Get supported formats if SoX is found
-		_, formats := IsSoxAvailable() // We already know it's available from LookPath
-		settings.SoxAudioTypes = formats
+		settings.SoxPath = validatedSoxPath
+		settings.SoxAudioTypes = GetSoxFormats(validatedSoxPath)
 	}
 
 	// Validate audio sources

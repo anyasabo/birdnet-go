@@ -63,6 +63,7 @@ type DualWriteRepository struct {
 	shutdownCh   chan struct{} // Signals shutdown to in-flight goroutines
 	shutdownOnce sync.Once     // Ensures shutdown is called only once
 
+	reconcileMu     sync.Mutex    // Protects reconcileTicker and reconcileDone
 	reconcileTicker *time.Ticker  // Periodic dirty ID reconciliation
 	reconcileDone   chan struct{} // Signals reconciliation goroutine has exited
 	reconcileOnce   sync.Once     // Ensures StartReconciliation is called only once
@@ -119,9 +120,14 @@ func (dw *DualWriteRepository) Shutdown() {
 		close(dw.shutdownCh)
 
 		// Stop reconciliation ticker and wait for goroutine to exit
-		if dw.reconcileTicker != nil {
-			dw.reconcileTicker.Stop()
-			<-dw.reconcileDone
+		dw.reconcileMu.Lock()
+		ticker := dw.reconcileTicker
+		done := dw.reconcileDone
+		dw.reconcileMu.Unlock()
+
+		if ticker != nil {
+			ticker.Stop()
+			<-done
 		}
 
 		// Wait for all in-flight goroutines to release the semaphore
@@ -139,16 +145,28 @@ func (dw *DualWriteRepository) Shutdown() {
 // synced to v2; if it was deleted from legacy, the v2 ghost is removed.
 func (dw *DualWriteRepository) StartReconciliation() {
 	dw.reconcileOnce.Do(func() {
-		dw.reconcileTicker = time.NewTicker(reconcileInterval)
-		dw.reconcileDone = make(chan struct{})
+		select {
+		case <-dw.shutdownCh:
+			return
+		default:
+		}
+
+		ticker := time.NewTicker(reconcileInterval)
+		done := make(chan struct{})
+
+		dw.reconcileMu.Lock()
+		dw.reconcileTicker = ticker
+		dw.reconcileDone = done
+		dw.reconcileMu.Unlock()
 
 		go func() {
-			defer close(dw.reconcileDone)
+			defer ticker.Stop()
+			defer close(done)
 			for {
 				select {
 				case <-dw.shutdownCh:
 					return
-				case <-dw.reconcileTicker.C:
+				case <-ticker.C:
 					dw.reconcileDirtyIDs()
 				}
 			}
@@ -375,6 +393,35 @@ func (dw *DualWriteRepository) syncToV2(ctx context.Context, result *detection.R
 		}
 	}
 
+	// Save model contributions (cross-model consensus data).
+	// Best-effort: contributions are supplementary metadata not stored in legacy,
+	// so they cannot be recovered during dirty ID reconciliation.
+	if len(result.ModelContributions) > 0 {
+		contribs := make([]*entities.DetectionModelContribution, 0, len(result.ModelContributions))
+		for _, contrib := range result.ModelContributions {
+			m := contrib.Model.WithDefaults()
+			modelEntity, err := dw.modelRepo.GetOrCreate(ctx, m.Name, m.Version, m.Variant,
+				detection.ResolveModelType(m.Name, m.Version), m.ClassifierPath)
+			if err != nil {
+				dw.logger.Warn("failed to resolve model for contribution",
+					logger.String("model_name", m.Name),
+					logger.Error(err))
+				continue
+			}
+			contribs = append(contribs, &entities.DetectionModelContribution{
+				DetectionID:   det.ID,
+				ModelID:       modelEntity.ID,
+				HitCount:      contrib.HitCount,
+				MaxConfidence: contrib.MaxConfidence,
+			})
+		}
+		if err := dw.v2.SaveModelContributions(ctx, det.ID, contribs); err != nil {
+			dw.logger.Warn("v2 model contributions save failed",
+				logger.Uint64("detection_id", uint64(det.ID)),
+				logger.Error(err))
+		}
+	}
+
 	// Save additional predictions
 	if len(additionalResults) > 0 {
 		// Get model type for predictions (default to bird if not available)
@@ -534,21 +581,13 @@ func (dw *DualWriteRepository) GetBySpecies(ctx context.Context, species string,
 			return dw.legacy.GetBySpecies(ctx, species, filters)
 		}
 
-		limit := 100
-		offset := 0
-		if filters != nil {
-			if filters.Limit > 0 {
-				limit = filters.Limit
-			}
-			offset = filters.Offset
+		if filters == nil {
+			filters = &datastore.DetectionFilters{}
 		}
-
-		// Query across all label IDs for this species (multi-model support)
-		searchFilters := &SearchFilters{
-			LabelIDs: labelIDs,
-			Limit:    limit,
-			Offset:   offset,
-			SortDesc: true,
+		searchFilters := dw.convertFilters(filters)
+		searchFilters.LabelIDs = labelIDs
+		if searchFilters.Limit == 0 {
+			searchFilters.Limit = 100
 		}
 		dets, total, err := dw.v2.Search(ctx, searchFilters)
 		if err != nil {
@@ -611,8 +650,17 @@ func (dw *DualWriteRepository) GetHourly(ctx context.Context, date, hour string,
 			return dw.legacy.GetHourly(ctx, date, hour, duration, limit, offset)
 		}
 		hourStart := time.Date(t.Year(), t.Month(), t.Day(), hourInt, 0, 0, 0, time.Local)
+		hourEnd := hourStart.Add(time.Duration(duration) * time.Hour)
 
-		dets, total, err := dw.v2.GetByHour(ctx, hourStart.Unix(), limit, offset)
+		start := hourStart.Unix()
+		end := hourEnd.Unix()
+		dets, total, err := dw.v2.Search(ctx, &SearchFilters{
+			StartTime: &start,
+			EndTime:   &end,
+			Limit:     limit,
+			Offset:    offset,
+			SortDesc:  true,
+		})
 		if err != nil {
 			return nil, 0, err
 		}
@@ -843,11 +891,32 @@ func (dw *DualWriteRepository) convertFilters(filters *datastore.DetectionFilter
 		sf.IsLocked = filters.Locked
 	}
 
-	// Convert verified filter
+	// Convert verified filter: legacy Verified=true means "has a review",
+	// Verified=false means "no review or empty verdict"
 	if filters.Verified != nil {
-		if *filters.Verified {
-			v := VerificationFilter(entities.VerificationCorrect)
-			sf.Verified = &v
+		sf.IsReviewed = filters.Verified
+	}
+
+	// Convert date filters to Unix timestamps
+	if filters.StartDate != "" || filters.EndDate != "" {
+		if filters.StartDate != "" {
+			if t, err := time.ParseInLocation(time.DateOnly, filters.StartDate, time.Local); err == nil {
+				start := t.Unix()
+				sf.StartTime = &start
+			}
+		}
+		if filters.EndDate != "" {
+			if t, err := time.ParseInLocation(time.DateOnly, filters.EndDate, time.Local); err == nil {
+				end := t.AddDate(0, 0, 1).Unix()
+				sf.EndTime = &end
+			}
+		}
+	} else if filters.Date != "" {
+		if t, err := time.ParseInLocation(time.DateOnly, filters.Date, time.Local); err == nil {
+			start := t.Unix()
+			end := t.AddDate(0, 0, 1).Unix()
+			sf.StartTime = &start
+			sf.EndTime = &end
 		}
 	}
 

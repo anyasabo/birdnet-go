@@ -15,7 +15,11 @@ import (
 	"github.com/tphakala/birdnet-go/internal/observability/metrics"
 )
 
-// TracingSpan represents a traced operation with minimal overhead
+// tagKeyModel is the tracing tag key used to identify the model in spans.
+const tagKeyModel = "model"
+
+// TracingSpan represents a traced operation with minimal overhead.
+// A TracingSpan must not be used from multiple goroutines concurrently.
 type TracingSpan struct {
 	operation      string
 	description    string
@@ -29,18 +33,16 @@ type TracingSpan struct {
 
 // Global metrics instance (set by observability package)
 var (
-	globalMetrics    *metrics.BirdNETMetrics
-	metricsMutex     sync.RWMutex
+	globalMetrics    atomic.Pointer[metrics.BirdNETMetrics]
 	metricsOnce      sync.Once
 	activeOperations int64
 )
 
-// globalInferenceCounters is always initialized and safe to use.
-// Tracks inference timing via lock-free atomics for the ring buffer metrics pipeline.
-var globalInferenceCounters = &inferencestats.Counters{}
+// globalInferenceCounters tracks per-model inference timing via lock-free atomics.
+var globalInferenceCounters = &inferencestats.CounterMap{}
 
-// GetInferenceCounters returns the shared inference counters for collector wiring.
-func GetInferenceCounters() *inferencestats.Counters {
+// GetInferenceCounters returns the shared per-model inference counters for collector wiring.
+func GetInferenceCounters() *inferencestats.CounterMap {
 	return globalInferenceCounters
 }
 
@@ -51,17 +53,13 @@ func GetInferenceCounters() *inferencestats.Counters {
 // metrics configuration remains consistent throughout the application lifecycle.
 func SetMetrics(m *metrics.BirdNETMetrics) {
 	metricsOnce.Do(func() {
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		globalMetrics = m
+		globalMetrics.Store(m)
 	})
 }
 
-// getMetrics returns the current metrics instance in a thread-safe manner
+// getMetrics returns the current metrics instance in a thread-safe manner.
 func getMetrics() *metrics.BirdNETMetrics {
-	metricsMutex.RLock()
-	defer metricsMutex.RUnlock()
-	return globalMetrics
+	return globalMetrics.Load()
 }
 
 // StartSpan starts a new tracing span with minimal overhead
@@ -100,7 +98,7 @@ func (s *TracingSpan) SetTag(key, value string) {
 	}
 
 	// Special handling for model tag
-	if key == "model" {
+	if key == tagKeyModel {
 		s.model = value
 	}
 

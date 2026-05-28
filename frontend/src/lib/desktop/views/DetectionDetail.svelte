@@ -18,7 +18,7 @@
   import ConfidenceCircle from '$lib/desktop/components/data/ConfidenceCircle.svelte';
   import WeatherDetails from '$lib/desktop/components/data/WeatherDetails.svelte';
   import AudioPlayer from '$lib/desktop/components/media/AudioPlayer.svelte';
-  import SpeciesBadges from '$lib/desktop/components/modals/SpeciesBadges.svelte';
+  import VerificationBadges from '$lib/desktop/components/ui/VerificationBadges.svelte';
   import ErrorAlert from '$lib/desktop/components/ui/ErrorAlert.svelte';
   import { handleBirdImageError } from '$lib/desktop/components/ui/image-utils.js';
   import { t } from '$lib/i18n';
@@ -242,7 +242,7 @@
 
   // Fetch image attribution metadata
   async function fetchImageAttribution() {
-    if (!detection?.scientificName) return;
+    if (!detection?.scientificName?.trim()) return;
 
     attributionController?.abort();
     attributionController = new AbortController();
@@ -268,7 +268,7 @@
 
   // Fetch species information (public data - no auth required)
   async function fetchSpeciesInfo() {
-    if (!detection?.scientificName) return;
+    if (!detection?.scientificName?.trim()) return;
 
     speciesController?.abort();
     speciesController = new AbortController();
@@ -298,7 +298,7 @@
 
   // Fetch taxonomy information (public data - no auth required)
   async function fetchTaxonomy() {
-    if (!detection?.scientificName) return;
+    if (!detection?.scientificName?.trim()) return;
 
     taxonomyController?.abort();
     taxonomyController = new AbortController();
@@ -478,7 +478,7 @@
             {det.scientificName}
           </p>
           <div class="mt-3" aria-label="Species classification badges">
-            <SpeciesBadges detection={det} size="sm" />
+            <VerificationBadges detection={det} size="sm" />
           </div>
         </div>
 

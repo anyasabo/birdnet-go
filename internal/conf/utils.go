@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/viper"
@@ -26,6 +27,54 @@ const (
 	osLinux   = "linux"
 	osWindows = "windows"
 )
+
+var (
+	cachedHomeDir string
+	errCachedHome error
+	homeDirOnce   sync.Once
+)
+
+// GetUserHomeDir returns the user's home directory. It tries os/user.Current()
+// first (works without $HOME, reads /etc/passwd), then os.UserHomeDir(), then
+// the HOME environment variable. The result is cached for the process lifetime.
+func GetUserHomeDir() (string, error) {
+	homeDirOnce.Do(func() {
+		cachedHomeDir, errCachedHome = resolveHomeDir()
+	})
+	return cachedHomeDir, errCachedHome
+}
+
+func resolveHomeDir() (string, error) {
+	if u, err := user.Current(); err == nil && u.HomeDir != "" {
+		return u.HomeDir, nil
+	}
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		return homeDir, nil
+	}
+	if home := os.Getenv("HOME"); home != "" {
+		return home, nil
+	}
+	return "", errors.Newf("home directory could not be determined: $HOME not set and os/user lookup failed").
+		Category(errors.CategorySystem).
+		Context("operation", "get-home-directory").
+		Build()
+}
+
+// ExpandTildePath expands a leading "~/" or bare "~" to the user's home
+// directory. Non-tilde paths are returned unchanged.
+func ExpandTildePath(path string) (string, error) {
+	if path == "~" {
+		return GetUserHomeDir()
+	}
+	if !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	homeDir, err := GetUserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, path[2:]), nil
+}
 
 // getDefaultConfigPaths returns a list of default configuration paths for the current operating system.
 // It determines paths based on standard conventions for storing application configuration files.
@@ -44,7 +93,7 @@ func GetDefaultConfigPaths() ([]string, error) {
 	exeDir := filepath.Dir(exePath)
 
 	// Fetch the user's home directory.
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := GetUserHomeDir()
 	if err != nil {
 		return nil, errors.New(err).
 			Category(errors.CategorySystem).
@@ -469,38 +518,14 @@ func GetFfprobeBinaryName() string {
 	return "ffprobe"
 }
 
-// IsFfmpegAvailable checks if ffmpeg is available in the system PATH.
-func IsFfmpegAvailable() bool {
-	_, err := exec.LookPath(GetFfmpegBinaryName())
-	return err == nil
-}
-
-// IsFfprobeAvailable checks if ffprobe is available in the system PATH.
-func IsFfprobeAvailable() bool {
-	_, err := exec.LookPath(GetFfprobeBinaryName())
-	return err == nil
-}
-
-// GetFfmpegVersion detects the installed ffmpeg version and returns the version string,
-// major version, and minor version. Returns empty string and 0,0 if detection fails.
-func GetFfmpegVersion() (version string, major, minor int) {
-	// Get the ffmpeg binary name
-	ffmpegBinary := GetFfmpegBinaryName()
-
-	// Look for ffmpeg in PATH
-	ffmpegPath, err := exec.LookPath(ffmpegBinary)
-	if err != nil {
-		return "", 0, 0
-	}
-
-	// Execute ffmpeg -version
-	cmd := exec.Command(ffmpegPath, "-version") //nolint:gosec // G204: ffmpegPath resolved via exec.LookPath()
+// GetFfmpegVersionFrom detects the ffmpeg version by executing the binary at
+// the given path. Returns empty string and 0,0 if detection fails.
+func GetFfmpegVersionFrom(ffmpegPath string) (version string, major, minor int) {
+	cmd := exec.Command(ffmpegPath, "-version") //nolint:gosec // G204: ffmpegPath validated by ValidateToolPath before reaching here
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", 0, 0
 	}
-
-	// Parse the version from output
 	return ParseFfmpegVersion(string(output))
 }
 
@@ -621,38 +646,21 @@ func parseLibavutilVersion(output string) (major, minor int) {
 	return major, minor
 }
 
-// IsSoxAvailable checks if SoX is available in the system PATH and returns its supported audio formats.
-// It returns a boolean indicating if SoX is available and a slice of supported audio format strings.
-func IsSoxAvailable() (isAvailable bool, formats []string) {
-	// Look for the SoX binary in the system PATH
-	soxPath, err := exec.LookPath(GetSoxBinaryName())
-	if err != nil {
-		return false, nil // SoX is not available
-	}
-
-	// Execute SoX with the help flag to get its output
-	cmd := exec.Command(soxPath, "-h") //nolint:gosec // G204: soxPath resolved via exec.LookPath()
+// GetSoxFormats returns the audio formats supported by the SoX binary at the
+// given path. Returns nil if SoX cannot be executed or reports no formats.
+func GetSoxFormats(soxPath string) []string {
+	cmd := exec.Command(soxPath, "-h") //nolint:gosec // G204: soxPath validated by ValidateToolPath before reaching here
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return false, nil // Failed to execute SoX
+		return nil
 	}
 
-	// Convert the output to a string and split it into lines
-	outputStr := string(output)
-	lines := strings.Split(outputStr, "\n")
-
-	var audioFormats []string
-	// Iterate through the lines to find the supported audio formats
-	for _, line := range lines {
+	for line := range strings.SplitSeq(string(output), "\n") {
 		if formats, found := strings.CutPrefix(line, "AUDIO FILE FORMATS:"); found {
-			// Extract and process the list of audio formats
-			formats = strings.TrimSpace(formats)
-			audioFormats = strings.Fields(formats)
-			break
+			return strings.Fields(strings.TrimSpace(formats))
 		}
 	}
-
-	return true, audioFormats // SoX is available, return the list of supported formats
+	return nil
 }
 
 // ValidateToolPath checks if a tool is available, either at an explicit path or in the system PATH.
