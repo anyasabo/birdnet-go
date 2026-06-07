@@ -1,0 +1,28 @@
+[Unit]
+Description=BirdNET-Go real-time bird sound identification
+Documentation=https://github.com/tphakala/birdnet-go
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=birdnet-go
+Group=birdnet-go
+# Sound-card capture needs the audio group; postinstall adds birdnet-go to it.
+SupplementaryGroups=audio
+WorkingDirectory=/var/lib/birdnet-go
+# Config is found via the binary's default search path (/etc/birdnet-go).
+# Relative data paths (clips/, logs/, the database) resolve under WorkingDirectory.
+ExecStart=/usr/bin/birdnet-go realtime
+Restart=on-failure
+RestartSec=5
+
+# Hardening (kept moderate: the app needs /dev/snd and outbound network).
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/birdnet-go
+
+[Install]
+WantedBy=multi-user.target

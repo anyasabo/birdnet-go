@@ -1,0 +1,94 @@
+# nfpm package definition for BirdNET-Go (fork-maintained native .deb).
+#
+# This file is consumed by `nfpm pkg` (https://nfpm.goreleaser.com). All of the
+# variable fields below (${VERSION}, ${ARCH}) are expanded from the environment
+# by nfpm at build time -- see packaging/deb/build.sh which sets them.
+#
+# Design note: everything BirdNET-Go-specific lives under packaging/deb/ and the
+# staging directory produced by build.sh. We never edit upstream-owned files
+# (Taskfile.yml, .github/workflows/release-build.yml, doc/...), so re-syncing the
+# fork onto upstream/main never produces a merge conflict here.
+
+name: birdnet-go
+arch: ${ARCH} # deb arch: arm64 (Raspberry Pi 64-bit) or amd64
+platform: linux
+version: ${VERSION}
+version_schema: none # VERSION is already a full deb version string from build.sh
+section: sound
+priority: optional
+maintainer: ${MAINTAINER}
+homepage: https://github.com/tphakala/birdnet-go
+description: |
+  Real-time bird sound identification (BirdNET-Go).
+  Fork-maintained native package: runs the birdnet-go binary directly under
+  systemd, no Docker required. Bundles the TensorFlow Lite and ONNX Runtime
+  shared libraries; pulls audio tooling from the distribution.
+license: "See /usr/share/doc/birdnet-go/LICENSE"
+
+# Hard runtime dependencies pulled from the distribution repos. ffmpeg (RTSP +
+# non-WAV export + live stream), sox + libsox-fmt-mp3 (spectrogram rendering),
+# libasound2 (sound-card capture). These are NOT optional.
+depends:
+  - ffmpeg
+  - sox
+  - libsox-fmt-mp3
+  - libasound2
+
+contents:
+  # Application binary (frontend + BirdNET v2.4 models are embedded in it).
+  - src: packaging/deb/staging/birdnet-go
+    dst: /usr/bin/birdnet-go
+    file_info:
+      mode: 0755
+
+  # Vendored shared libraries. They are not packaged by Debian, so we ship them
+  # under a private dir and register it with the dynamic linker (see the
+  # ld.so.conf.d drop-in below + ldconfig in postinstall).
+  - src: packaging/deb/staging/libtensorflowlite_c.so
+    dst: /usr/lib/birdnet-go/libtensorflowlite_c.so
+    file_info:
+      mode: 0644
+  - src: packaging/deb/staging/libonnxruntime.so
+    dst: /usr/lib/birdnet-go/libonnxruntime.so
+    file_info:
+      mode: 0644
+  - src: packaging/deb/ld.so.conf
+    dst: /etc/ld.so.conf.d/birdnet-go.conf
+    file_info:
+      mode: 0644
+
+  # Default configuration. Copied verbatim from upstream internal/conf/config.yaml
+  # by build.sh, so it always tracks the upstream default. Marked as a config
+  # file with noreplace: user edits survive package upgrades.
+  - src: packaging/deb/staging/config.yaml
+    dst: /etc/birdnet-go/config.yaml
+    type: config|noreplace
+    file_info:
+      mode: 0644
+
+  # systemd unit: runs the binary directly (no Docker).
+  - src: packaging/deb/birdnet-go.service
+    dst: /lib/systemd/system/birdnet-go.service
+    file_info:
+      mode: 0644
+
+  - src: LICENSE
+    dst: /usr/share/doc/birdnet-go/LICENSE
+    file_info:
+      mode: 0644
+
+  # Data directory owned by the service user (created/chowned in postinstall).
+  - dst: /var/lib/birdnet-go
+    type: dir
+    file_info:
+      mode: 0750
+      owner: birdnet-go
+      group: birdnet-go
+
+scripts:
+  postinstall: packaging/deb/scripts/postinstall.sh
+  preremove: packaging/deb/scripts/preremove.sh
+  postremove: packaging/deb/scripts/postremove.sh
+
+deb:
+  compression: zstd

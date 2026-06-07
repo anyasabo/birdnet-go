@@ -1,0 +1,99 @@
+# Fork-only workflow: builds a native .deb and publishes it to THIS fork's
+# GitHub Releases. Upstream does not have this file, so it never participates in
+# a merge/rebase from upstream/main -- the fork resync stays conflict-free.
+#
+# Trigger it manually (Actions tab -> "Run workflow") or by pushing a tag like
+# pkg-2026.06.06. The build environment mirrors release-build.yml; the actual
+# packaging is done by packaging/deb/build.sh.
+name: Fork .deb Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: Target architecture
+        type: choice
+        default: arm64
+        options: [arm64, amd64]
+  push:
+    tags:
+      - 'pkg-*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # On manual runs the chosen arch is filtered below; tag pushes build both.
+        arch: [arm64, amd64]
+    steps:
+      - name: Skip non-selected arch on manual run
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ matrix.arch }}" != "${{ inputs.arch }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # need tags for version derivation
+
+      - name: Set up Go
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Install build dependencies
+        if: steps.gate.outputs.skip == 'false'
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
+        with:
+          packages: build-essential pkg-config gcc-aarch64-linux-gnu
+          version: 1.0
+
+      - name: Fix cross-compiler symlinks
+        if: steps.gate.outputs.skip == 'false' && matrix.arch == 'arm64'
+        run: sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-13 /usr/bin/aarch64-linux-gnu-gcc
+
+      - name: Install Task
+        if: steps.gate.outputs.skip == 'false'
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ONNX Runtime is fetched by build.sh itself (correct target arch), so no
+      # separate setup step is needed -- keeps CI and local Docker builds identical.
+
+      - name: Build .deb
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          ARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 1
+          MAINTAINER: ${{ github.repository_owner }} <noreply@users.noreply.github.com>
+        run: packaging/deb/build.sh
+
+      - name: Upload workflow artifact
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/upload-artifact@v7
+        with:
+          name: birdnet-go-deb-${{ matrix.arch }}
+          path: dist/deb/*.deb
+
+      - name: Publish to fork release (tag pushes only)
+        if: steps.gate.outputs.skip == 'false' && startsWith(github.ref, 'refs/tags/pkg-')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/deb/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
