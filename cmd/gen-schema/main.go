@@ -30,10 +30,9 @@ func run() error {
 	}
 
 	r := &jsonschema.Reflector{
-		DoNotReference:             false,
-		ExpandedStruct:             false,
 		AllowAdditionalProperties:  true,
 		RequiredFromJSONSchemaTags: true,
+		FieldNameTag:               "yaml",
 	}
 
 	schema := r.Reflect(&conf.Settings{})
@@ -204,10 +203,10 @@ func applyToSchema(schema *jsonschema.Schema, t reflect.Type, cm commentMap, vis
 	}
 
 	for pair := schema.Properties.Oldest(); pair != nil; pair = pair.Next() {
-		jsonKey := pair.Key
+		yamlKey := pair.Key
 		propSchema := pair.Value
 
-		field, ok := findFieldByJSONKey(t, jsonKey)
+		field, ok := findFieldByYAMLKey(t, yamlKey)
 		if !ok {
 			continue
 		}
@@ -227,7 +226,7 @@ func applyToSchema(schema *jsonschema.Schema, t reflect.Type, cm commentMap, vis
 	}
 }
 
-func findFieldByJSONKey(t reflect.Type, jsonKey string) (reflect.StructField, bool) {
+func findFieldByYAMLKey(t reflect.Type, yamlKey string) (reflect.StructField, bool) {
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
@@ -236,16 +235,16 @@ func findFieldByJSONKey(t reflect.Type, jsonKey string) (reflect.StructField, bo
 	}
 
 	for f := range t.Fields() {
-		tag := f.Tag.Get("json")
+		tag := f.Tag.Get("yaml")
 		if tag == "" || tag == "-" {
 			continue
 		}
 		name := strings.Split(tag, ",")[0]
-		if name == jsonKey {
+		if name == yamlKey {
 			return f, true
 		}
 		if f.Anonymous {
-			if sf, ok := findFieldByJSONKey(f.Type, jsonKey); ok {
+			if sf, ok := findFieldByYAMLKey(f.Type, yamlKey); ok {
 				return sf, true
 			}
 		}
@@ -253,23 +252,16 @@ func findFieldByJSONKey(t reflect.Type, jsonKey string) (reflect.StructField, bo
 	return reflect.StructField{}, false
 }
 
-// findTypeByName maps a schema definition name back to its reflect.Type.
-// We build the mapping by walking the Settings struct tree.
-func findTypeByName(name string) reflect.Type {
-	typeMap := buildTypeMap()
-	return typeMap[name]
-}
-
-var cachedTypeMap map[string]reflect.Type
-
-func buildTypeMap() map[string]reflect.Type {
-	if cachedTypeMap != nil {
-		return cachedTypeMap
-	}
-	cachedTypeMap = make(map[string]reflect.Type)
+// typeMap maps Go type names back to their reflect.Type, built once by walking Settings.
+var typeMap = func() map[string]reflect.Type {
+	m := make(map[string]reflect.Type)
 	visited := make(map[reflect.Type]bool)
-	collectTypes(reflect.TypeFor[conf.Settings](), visited, cachedTypeMap)
-	return cachedTypeMap
+	collectTypes(reflect.TypeFor[conf.Settings](), visited, m)
+	return m
+}()
+
+func findTypeByName(name string) reflect.Type {
+	return typeMap[name]
 }
 
 func collectTypes(t reflect.Type, visited map[reflect.Type]bool, m map[string]reflect.Type) {
