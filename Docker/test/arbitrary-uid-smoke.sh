@@ -69,7 +69,7 @@ if [ "$status" != "ok" ]; then
 fi
 
 # Config must resolve under the writable /config mount, not /.
-if ! docker logs "$cid" 2>&1 | grep -Eq "config_file=/config(/|[[:space:]]|$)"; then
+if ! docker logs "$cid" 2>&1 | grep -aEq "config_file=/config(/|[[:space:]]|$)"; then
     echo "FAIL: config_file did not resolve under /config (HOME fallback regressed?)"
     exit 1
 fi
