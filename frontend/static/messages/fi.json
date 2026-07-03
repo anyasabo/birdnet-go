@@ -805,6 +805,7 @@
       "hourly": "Tunnittaiset tulokset klo {hour}.00 päivänä {date}",
       "hourlyRange": "Tunnittaiset tulokset välillä {startHour}.00-{endHour}.00 päivänä {date}",
       "species": "{species} tulokset päivänä {date}",
+      "speciesRange": "Results for {species} from {startDate} to {endDate}",
       "search": "Hakutulokset haulle \"{query}\"",
       "allDetections": "Kaikki havainnot päivänä {date}"
     },
@@ -1947,6 +1948,7 @@
       "switchToGrid": "Vaihda ruudukkonäkymään",
       "switchToList": "Vaihda listanäkymään",
       "noSpeciesFound": "Suodattimia vastaavia lajeja ei löytynyt.",
+      "viewDetections": "View detections for {species}",
       "headers": {
         "species": "Laji",
         "detections": "Havainnot",

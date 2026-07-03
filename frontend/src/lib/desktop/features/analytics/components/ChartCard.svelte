@@ -15,6 +15,8 @@
 
   import { t } from '$lib/i18n';
   import { getLogger } from '$lib/utils/logger';
+  import { navigation } from '$lib/stores/navigation.svelte';
+  import { buildSpeciesRangeDetectionUrl } from '$lib/utils/detectionUrls';
   import { formatDateForAPI } from '../registry/analyticsParams';
   import type { AnalyticsParams, ChartDef } from '../registry/types';
 
@@ -138,6 +140,15 @@
       options,
       onParamsChange: onParamsChange ?? (() => {}),
       speciesNames: speciesNames ?? new Map<string, string>(),
+      onSpeciesClick: (scientificName: string) => {
+        navigation.navigate(
+          buildSpeciesRangeDetectionUrl(
+            scientificName,
+            formatDateForAPI(params.startDate),
+            formatDateForAPI(params.endDate)
+          )
+        );
+      },
     };
     return chart.mapProps ? chart.mapProps(result, params, ctx) : { data: result };
   });

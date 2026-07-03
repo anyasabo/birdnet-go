@@ -6,6 +6,8 @@
   import { loggers } from '$lib/utils/logger';
   import { getStoredValue, setStoredValue } from '$lib/utils/storage';
   import { buildAppUrl } from '$lib/utils/urlHelpers';
+  import { buildSpeciesRangeDetectionUrl } from '$lib/utils/detectionUrls';
+  import { navigation } from '$lib/stores/navigation.svelte';
   import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
   import { onMount, onDestroy } from 'svelte';
   import SortableHeader from '$lib/desktop/components/ui/SortableHeader.svelte';
@@ -206,6 +208,44 @@
   // fetch can detect it has been superseded and stop mutating speciesData.
   let thumbnailFetchSeq = 0;
 
+  // Resolves the active filter time period to a concrete {startDate, endDate}
+  // pair. 'all' returns nulls (unbounded); callers that need concrete bounds
+  // (e.g. building a detection URL) fall back to a species' own heard range.
+  function computeDateRange(): { startDate: string | null; endDate: string | null } {
+    const today = new Date();
+    switch (filters.timePeriod) {
+      case 'today': {
+        const d = formatDateForInput(today);
+        return { startDate: d, endDate: d };
+      }
+      case 'week':
+        return {
+          startDate: formatDateForInput(new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000)),
+          endDate: formatDateForInput(today),
+        };
+      case 'month':
+        return {
+          startDate: formatDateForInput(new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000)),
+          endDate: formatDateForInput(today),
+        };
+      case '90days':
+        return {
+          startDate: formatDateForInput(new Date(today.getTime() - 89 * 24 * 60 * 60 * 1000)),
+          endDate: formatDateForInput(today),
+        };
+      case 'year':
+        return {
+          startDate: formatDateForInput(new Date(today.getTime() - 364 * 24 * 60 * 60 * 1000)),
+          endDate: formatDateForInput(today),
+        };
+      case 'custom':
+        return { startDate: filters.startDate, endDate: filters.endDate };
+      case 'all':
+      default:
+        return { startDate: null, endDate: null };
+    }
+  }
+
   async function fetchData() {
     isLoading = true;
     const fetchSeq = ++thumbnailFetchSeq;
@@ -218,41 +258,7 @@
     debouncedSearchTerm = filters.searchTerm;
 
     try {
-      // Determine date range based on time period
-      let startDate, endDate;
-      const today = new Date();
-
-      switch (filters.timePeriod) {
-        case 'today':
-          startDate = formatDateForInput(today);
-          endDate = startDate;
-          break;
-        case 'week':
-          endDate = formatDateForInput(today);
-          startDate = formatDateForInput(new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000));
-          break;
-        case 'month':
-          endDate = formatDateForInput(today);
-          startDate = formatDateForInput(new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000));
-          break;
-        case '90days':
-          endDate = formatDateForInput(today);
-          startDate = formatDateForInput(new Date(today.getTime() - 89 * 24 * 60 * 60 * 1000));
-          break;
-        case 'year':
-          endDate = formatDateForInput(today);
-          startDate = formatDateForInput(new Date(today.getTime() - 364 * 24 * 60 * 60 * 1000));
-          break;
-        case 'custom':
-          startDate = filters.startDate;
-          endDate = filters.endDate;
-          break;
-        case 'all':
-        default:
-          startDate = null;
-          endDate = null;
-          break;
-      }
+      const { startDate, endDate } = computeDateRange();
 
       // Build query parameters
       const params = new URLSearchParams();
@@ -535,6 +541,30 @@
     }, 300);
   }
 
+  // Extracts the YYYY-MM-DD part from a first_heard/last_heard value, which the
+  // backend serialises as "2006-01-02 15:04:05". Returns null if unparseable.
+  function toDateOnly(value: string | undefined): string | null {
+    const parsed = parseLocalDateString(value);
+    return parsed ? getLocalDateString(parsed) : null;
+  }
+
+  // Navigate to the detections list filtered to this species across the active
+  // date range. Uses the filter range when bounded; for 'all' (unbounded) it
+  // falls back to the species' own first_heard..last_heard so the detections page
+  // gets concrete start/end dates instead of collapsing to today.
+  function goToSpeciesDetections(species: SpeciesData) {
+    const { startDate, endDate } = computeDateRange();
+    const start = startDate ?? toDateOnly(species.first_heard);
+    const end = endDate ?? toDateOnly(species.last_heard);
+    if (!start || !end) {
+      // No usable range (e.g. a species with no recorded first/last heard);
+      // fall back to the stats modal rather than a broken navigation.
+      handleSpeciesClick(species);
+      return;
+    }
+    navigation.navigate(buildSpeciesRangeDetectionUrl(species.scientific_name, start, end));
+  }
+
   function handleSpeciesClick(species: SpeciesData) {
     selectedSpecies = species;
     showDetailModal = true;
@@ -672,7 +702,7 @@
       {#if !isLoading && viewMode === 'grid' && filteredSpecies.length > 0}
         <div class="sm:hidden space-y-2">
           {#each filteredSpecies as species, index (`${species.scientific_name}_${index}`)}
-            <SpeciesCardMobile {species} variant="compact" onClick={handleSpeciesClick} />
+            <SpeciesCardMobile {species} variant="compact" onClick={goToSpeciesDetections} />
           {/each}
         </div>
       {/if}
@@ -681,7 +711,7 @@
       {#if !isLoading && viewMode === 'grid' && filteredSpecies.length > 0}
         <div class="species-grid hidden sm:grid">
           {#each filteredSpecies as species, index (`${species.scientific_name}_${index}`)}
-            <SpeciesCard {species} />
+            <SpeciesCard {species} onSpeciesClick={goToSpeciesDetections} />
           {/each}
         </div>
       {/if}
@@ -737,9 +767,14 @@
                         </div>
                       </div>
                       <div>
-                        <div class="font-bold">
+                        <button
+                          type="button"
+                          class="font-bold link link-hover text-left"
+                          onclick={() => goToSpeciesDetections(species)}
+                          aria-label={t('analytics.species.viewDetections', { species: displayName })}
+                        >
                           {displayName}
-                        </div>
+                        </button>
                         <div class="text-sm opacity-50 italic">{species.scientific_name}</div>
                       </div>
                     </div>
@@ -769,7 +804,7 @@
           <!-- Mobile list view -->
           <div class="sm:hidden space-y-2">
             {#each filteredSpecies as species, index (`${species.scientific_name}_${index}`)}
-              <SpeciesCardMobile {species} variant="list" onClick={handleSpeciesClick} />
+              <SpeciesCardMobile {species} variant="list" onClick={goToSpeciesDetections} />
             {/each}
           </div>
         </div>

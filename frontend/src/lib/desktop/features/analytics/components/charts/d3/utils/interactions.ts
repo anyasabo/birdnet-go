@@ -329,6 +329,11 @@ export function createLegend(
     position: { x: number; y: number };
     itemHeight: number;
     onToggle?: (id: string, visible: boolean) => void;
+    // When provided, clicking the text label invokes this instead of toggling
+    // visibility (the swatch still toggles). Used to navigate from a legend entry
+    // to that species' detections. `ariaLabel` builds an accessible label per id.
+    onLabelClick?: (id: string) => void;
+    ariaLabel?: (id: string) => string;
   }
 ): void {
   const legend = container
@@ -371,7 +376,7 @@ export function createLegend(
     .style('opacity', d => (d.visible ? 1 : 0.3));
 
   // Labels
-  legendItems
+  const labels = legendItems
     .append('text')
     .attr('x', 18)
     .attr('y', 0)
@@ -381,4 +386,30 @@ export function createLegend(
     .style('fill', 'currentColor')
     .style('opacity', d => (d.visible ? 1 : 0.5))
     .text(d => d.label);
+
+  // Optional: the label navigates (e.g. to the species' detections) instead of
+  // toggling. stopPropagation keeps the group-level toggle from also firing, so
+  // the swatch still toggles visibility while the label navigates. Keyboard-
+  // accessible via role/tabindex.
+  if (config.onLabelClick) {
+    const onLabelClick = config.onLabelClick;
+    const navigate = (d: { id?: string; label: string }) => onLabelClick(d.id ?? d.label);
+    labels
+      .style('cursor', 'pointer')
+      .style('text-decoration', 'underline')
+      .attr('role', 'link')
+      .attr('tabindex', 0)
+      .attr('aria-label', d => config.ariaLabel?.(d.id ?? d.label) ?? d.label)
+      .on('click', function (event: MouseEvent, d) {
+        event.stopPropagation();
+        navigate(d);
+      })
+      .on('keydown', function (event: KeyboardEvent, d) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          event.stopPropagation();
+          navigate(d);
+        }
+      });
+  }
 }

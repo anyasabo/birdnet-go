@@ -805,6 +805,7 @@
       "hourly": "Hodinové výsledky pro {hour}:00 dne {date}",
       "hourlyRange": "Hodinové výsledky od {startHour}:00 do {endHour}:00 dne {date}",
       "species": "Výsledky pro druh {species} dne {date}",
+      "speciesRange": "Results for {species} from {startDate} to {endDate}",
       "search": "Výsledky vyhledávání pro „{query}“",
       "allDetections": "Všechny detekce ze dne {date}"
     },
@@ -1947,6 +1948,7 @@
       "switchToGrid": "Přepnout na mřížku",
       "switchToList": "Přepnout na seznam",
       "noSpeciesFound": "Nebyly nalezeny žádné druhy odpovídající vašim filtrům.",
+      "viewDetections": "View detections for {species}",
       "headers": {
         "species": "Druh",
         "detections": "Detekce",

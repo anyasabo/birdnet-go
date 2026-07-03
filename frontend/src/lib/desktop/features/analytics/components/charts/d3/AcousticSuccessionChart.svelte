@@ -54,6 +54,8 @@
     peakLabelKey?: string;
     /** i18n key for the screen-reader summary; receives { count, species, time }. */
     summaryKey?: string;
+    /** Navigate to a species' detections when its legend entry is clicked. */
+    onSpeciesClick?: (_scientificName: string) => void;
   }
 
   let {
@@ -66,6 +68,7 @@
     totalLabelKey = 'analytics.advanced.charts.succession.tooltipDetections',
     peakLabelKey = 'analytics.advanced.charts.succession.tooltipPeak',
     summaryKey = 'analytics.advanced.charts.succession.summary',
+    onSpeciesClick,
   }: Props = $props();
 
   // Layout / style constants.
@@ -335,7 +338,18 @@
             style:background-color={item.color}
             aria-hidden="true"
           ></span>
-          <span class="succession-legend-label">{item.label}</span>
+          {#if onSpeciesClick}
+            <button
+              type="button"
+              class="succession-legend-label succession-legend-link"
+              onclick={() => onSpeciesClick?.(item.scientificName)}
+              aria-label={t('analytics.species.viewDetections', { species: item.label })}
+            >
+              {item.label}
+            </button>
+          {:else}
+            <span class="succession-legend-label">{item.label}</span>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -391,6 +405,20 @@
     width: 0.7rem;
     height: 0.7rem;
     border-radius: 2px;
+  }
+
+  /* Reset the button back to the plain legend-label look, adding only the link affordance. */
+  .succession-legend-link {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .succession-legend-link:hover {
+    text-decoration: underline;
   }
 
   :global(.stream-area) {

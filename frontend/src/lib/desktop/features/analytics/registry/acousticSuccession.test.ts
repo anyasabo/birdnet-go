@@ -39,6 +39,7 @@ function makeCtx(names: Record<string, string>): ChartPropsContext {
     options: {},
     onParamsChange: vi.fn(),
     speciesNames: new Map(Object.entries(names)),
+    onSpeciesClick: vi.fn(),
   };
 }
 
@@ -151,5 +152,11 @@ describe('acoustic-succession chart def', () => {
     // No mapping -> falls back to the scientific name.
     expect(series[1].commonName).toBe('Apus apus');
     expect(props.noteKey).toBe('analytics.advanced.charts.succession.note');
+  });
+
+  it('forwards ctx.onSpeciesClick so a legend click can navigate to detections', () => {
+    const ctx = makeCtx({});
+    const props = chartDef.mapProps?.([], makeParams(), ctx) ?? {};
+    expect(props.onSpeciesClick).toBe(ctx.onSpeciesClick);
   });
 });

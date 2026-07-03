@@ -54,6 +54,32 @@ export function buildSpeciesDetectionUrl(
 }
 
 /**
+ * Builds a detection-list URL filtered to all detections of a species across a
+ * date range (inclusive). Unlike buildSpeciesDetectionUrl, which pins a single
+ * day, this passes start_date/end_date so the detections page routes through the
+ * advanced-search path and returns every detection of the species in the range.
+ * Used by the analytics Species and Activity pages to jump from a species to its
+ * detections without collapsing to a single day.
+ */
+export function buildSpeciesRangeDetectionUrl(
+  scientificName: string,
+  startDate: string,
+  endDate: string,
+  numResults?: number,
+  offset?: number
+): string {
+  const params = new URLSearchParams({
+    queryType: 'species',
+    species: scientificName,
+    start_date: startDate,
+    end_date: endDate,
+  });
+  if (numResults !== undefined) params.set('numResults', numResults.toString());
+  if (offset !== undefined) params.set('offset', offset.toString());
+  return buildAppUrl(`/ui/detections?${params.toString()}`);
+}
+
+/**
  * Builds a detection-list URL filtered to a species within a specific hour window.
  * Used by the dashboard per-species hourly cells.
  */

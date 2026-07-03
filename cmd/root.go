@@ -13,6 +13,7 @@ import (
 	"github.com/tphakala/birdnet-go/cmd/license"
 	"github.com/tphakala/birdnet-go/cmd/notify"
 	"github.com/tphakala/birdnet-go/cmd/rangefilter"
+	"github.com/tphakala/birdnet-go/cmd/seeddetections"
 	"github.com/tphakala/birdnet-go/cmd/serve"
 	"github.com/tphakala/birdnet-go/cmd/support"
 	"github.com/tphakala/birdnet-go/internal/conf"
@@ -41,6 +42,7 @@ func RootCommand(settings *conf.Settings) *cobra.Command {
 	benchmarkCmd := benchmark.Command(settings)
 	notifyCmd := notify.Command(settings)
 	importStageCmd := importstage.Command(settings)
+	seedDetectionsCmd := seeddetections.Command(settings)
 
 	subcommands := []*cobra.Command{
 		serveCmd,
@@ -51,6 +53,7 @@ func RootCommand(settings *conf.Settings) *cobra.Command {
 		benchmarkCmd,
 		notifyCmd,
 		importStageCmd,
+		seedDetectionsCmd,
 	}
 
 	rootCmd.AddCommand(subcommands...)

@@ -805,6 +805,7 @@
       "hourly": "Timresultat för {hour}:00 den {date}",
       "hourlyRange": "Timresultat från {startHour}:00 till {endHour}:00 den {date}",
       "species": "Resultat för {species} den {date}",
+      "speciesRange": "Results for {species} from {startDate} to {endDate}",
       "search": "Sökresultat för \"{query}\"",
       "allDetections": "Alla detekteringar för {date}"
     },
@@ -1947,6 +1948,7 @@
       "switchToGrid": "Byt till rutnätsvy",
       "switchToList": "Byt till listvy",
       "noSpeciesFound": "Inga arter hittades som matchar dina filter.",
+      "viewDetections": "View detections for {species}",
       "headers": {
         "species": "Art",
         "detections": "Detektioner",

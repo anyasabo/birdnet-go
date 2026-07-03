@@ -32,6 +32,7 @@ function makeCtx(names: [string, string][] = []): ChartPropsContext {
     options: {},
     onParamsChange: vi.fn(),
     speciesNames: new Map(names),
+    onSpeciesClick: vi.fn(),
   };
 }
 

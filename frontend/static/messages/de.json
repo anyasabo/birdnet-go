@@ -805,6 +805,7 @@
       "hourly": "Stündliche Ergebnisse für {hour}:00 Uhr am {date}",
       "hourlyRange": "Stündliche Ergebnisse von {startHour}:00 bis {endHour}:00 Uhr am {date}",
       "species": "Ergebnisse für {species} am {date}",
+      "speciesRange": "Results for {species} from {startDate} to {endDate}",
       "search": "Suchergebnisse für \"{query}\"",
       "allDetections": "Alle Erkennungen vom {date}"
     },
@@ -1947,6 +1948,7 @@
       "switchToGrid": "Zur Gitteransicht wechseln",
       "switchToList": "Zur Listenansicht wechseln",
       "noSpeciesFound": "Keine Arten gefunden, die Ihren Filtern entsprechen.",
+      "viewDetections": "View detections for {species}",
       "headers": {
         "species": "Art",
         "detections": "Erkennungen",

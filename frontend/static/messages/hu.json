@@ -805,6 +805,7 @@
       "hourly": "Órási eredmények {date}-án {hour}:00-kor",
       "hourlyRange": "Órási eredmények {date}-án {startHour}:00 - {endHour}:00 között",
       "species": "{species} eredményei {date}-án",
+      "speciesRange": "Results for {species} from {startDate} to {endDate}",
       "search": "\"{query}\" keresési eredményei",
       "allDetections": "Összes detektálás {date}-án"
     },
@@ -1947,6 +1948,7 @@
       "switchToGrid": "Rács nézetre váltás",
       "switchToList": "Lista nézetre váltás",
       "noSpeciesFound": "A szűrőknek megfelelő faj nem található.",
+      "viewDetections": "View detections for {species}",
       "headers": {
         "species": "Faj",
         "detections": "Detektálások",

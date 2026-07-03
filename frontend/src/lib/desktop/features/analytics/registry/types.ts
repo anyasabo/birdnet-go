@@ -92,6 +92,12 @@ export interface ChartPropsContext {
    * `localizeSpeciesName`).
    */
   speciesNames: Map<string, string>;
+  /**
+   * Navigate to the detections list for a species, scoped to the active analytics
+   * date range. Charts wire this to species labels/legend entries so a click jumps
+   * from a chart to that species' detections.
+   */
+  onSpeciesClick: (_scientificName: string) => void;
 }
 
 /**

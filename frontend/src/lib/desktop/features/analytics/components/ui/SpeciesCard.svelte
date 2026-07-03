@@ -18,9 +18,10 @@
   interface Props {
     species: SpeciesData;
     className?: string;
+    onSpeciesClick?: (_species: SpeciesData) => void;
   }
 
-  let { species, className = '' }: Props = $props();
+  let { species, className = '', onSpeciesClick }: Props = $props();
 
   function formatPercentage(value: number): string {
     return (value * 100).toFixed(1) + '%';
@@ -48,7 +49,18 @@
     </div>
   </figure>
   <div class="card-body p-4">
-    <h3 class="card-title text-base">{displayName}</h3>
+    {#if onSpeciesClick}
+      <button
+        type="button"
+        class="card-title text-base link link-hover text-left w-fit"
+        onclick={() => onSpeciesClick?.(species)}
+        aria-label={t('analytics.species.viewDetections', { species: displayName })}
+      >
+        {displayName}
+      </button>
+    {:else}
+      <h3 class="card-title text-base">{displayName}</h3>
+    {/if}
     <p class="text-sm text-[var(--color-base-content)] opacity-60 italic">
       {species.scientific_name}
     </p>

@@ -120,6 +120,13 @@
         return t('detections.titles.hourly', { hour: data.hour, date: data.date });
 
       case 'species':
+        if (data.startDate || data.endDate) {
+          return t('detections.titles.speciesRange', {
+            species: data.species,
+            startDate: data.startDate ?? data.endDate,
+            endDate: data.endDate ?? data.startDate,
+          });
+        }
         return t('detections.titles.species', { species: data.species, date: data.date });
 
       case 'search':

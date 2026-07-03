@@ -33,6 +33,7 @@ function makeCtx(names: Record<string, string>): ChartPropsContext {
     options: {},
     onParamsChange: vi.fn(),
     speciesNames: new Map(Object.entries(names)),
+    onSpeciesClick: vi.fn(),
   };
 }
 

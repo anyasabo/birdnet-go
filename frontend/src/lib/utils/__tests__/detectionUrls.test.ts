@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   buildHourlyDetectionUrl,
   buildSpeciesDetectionUrl,
+  buildSpeciesRangeDetectionUrl,
   buildSpeciesHourUrl,
 } from '../detectionUrls';
 import { resetBasePath, setBasePath } from '../urlHelpers';
@@ -73,6 +74,40 @@ describe('detectionUrls', () => {
       const url = buildSpeciesDetectionUrl(TEST_SPECIES, TEST_DATE, 50, 10);
       expect(url).toBe(
         `/ui/detections?queryType=species&species=Turdus+merula&date=${TEST_DATE}&numResults=50&offset=10`
+      );
+    });
+  });
+
+  describe('buildSpeciesRangeDetectionUrl', () => {
+    const START_DATE = '2026-04-01';
+    const END_DATE = '2026-04-30';
+
+    it('returns unprefixed URL with start_date and end_date', () => {
+      const url = buildSpeciesRangeDetectionUrl(TEST_SPECIES, START_DATE, END_DATE);
+      expect(url).toBe(
+        `/ui/detections?queryType=species&species=Turdus+merula&start_date=${START_DATE}&end_date=${END_DATE}`
+      );
+    });
+
+    it('prepends basepath when set', () => {
+      setBasePath(TEST_BASE_PATH);
+      const url = buildSpeciesRangeDetectionUrl(TEST_SPECIES, START_DATE, END_DATE);
+      expect(url).toBe(
+        `${TEST_BASE_PATH}/ui/detections?queryType=species&species=Turdus+merula&start_date=${START_DATE}&end_date=${END_DATE}`
+      );
+    });
+
+    it('includes numResults and offset when provided', () => {
+      const url = buildSpeciesRangeDetectionUrl(TEST_SPECIES, START_DATE, END_DATE, 50, 10);
+      expect(url).toBe(
+        `/ui/detections?queryType=species&species=Turdus+merula&start_date=${START_DATE}&end_date=${END_DATE}&numResults=50&offset=10`
+      );
+    });
+
+    it('encodes species names with non-ASCII characters', () => {
+      const url = buildSpeciesRangeDetectionUrl('Pöllö lajinimi', START_DATE, END_DATE);
+      expect(url).toBe(
+        `/ui/detections?queryType=species&species=P%C3%B6ll%C3%B6+lajinimi&start_date=${START_DATE}&end_date=${END_DATE}`
       );
     });
   });

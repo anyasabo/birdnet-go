@@ -11,6 +11,7 @@
   import { getLogger } from '$lib/utils/logger';
   import { getLocalDateString } from '$lib/utils/date';
   import { navigation } from '$lib/stores/navigation.svelte';
+  import { parseDetectionQueryParams } from './detectionQuery';
 
   const logger = getLogger('app');
 
@@ -22,16 +23,6 @@
   // Local storage keys for user preferences
   const RESULTS_PER_PAGE_KEY = 'birdnet-detections-results-per-page';
   const SORT_BY_KEY = 'birdnet-detections-sort-by';
-
-  const ALLOWED_SORT_VALUES = new Set<string>([
-    'date_desc',
-    'date_asc',
-    'species_asc',
-    'species_desc',
-    'confidence_asc',
-    'confidence_desc',
-    'status',
-  ]);
 
   // Get saved preference from localStorage
   function getSavedResultsPerPage(): number {
@@ -48,58 +39,14 @@
     return 25; // Default
   }
 
-  // Extract query parameters from URL
+  // Extract query parameters from URL. The parsing rules live in the pure
+  // parseDetectionQueryParams helper (unit-tested); this reads the DOM/storage
+  // inputs it needs and delegates.
   function getQueryParams(): DetectionQueryParams {
-    const params = new URLSearchParams(window.location.search);
-    const search = params.get('search');
-
-    // Set queryType to 'search' if search parameter is present
-    let queryType = params.get('queryType') as DetectionQueryParams['queryType'];
-    if (search && !queryType) {
-      queryType = 'search';
-    } else if (!queryType) {
-      queryType = 'all';
-    }
-
-    // Parse and validate numResults
-    const numResultsParam = params.get('numResults');
-    let numResults = numResultsParam ? parseInt(numResultsParam) : getSavedResultsPerPage();
-
-    // Validate numResults is one of allowed values
-    if (isNaN(numResults) || ![10, 25, 50, 100].includes(numResults)) {
-      numResults = getSavedResultsPerPage();
-    }
-
-    // Parse and validate sortBy from URL or localStorage
-    const sortByParam = params.get('sortBy');
-    let sortBy: DetectionSortBy | undefined;
-    if (sortByParam && ALLOWED_SORT_VALUES.has(sortByParam)) {
-      sortBy = sortByParam as DetectionSortBy;
-    } else if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(SORT_BY_KEY);
-      if (saved && ALLOWED_SORT_VALUES.has(saved)) {
-        sortBy = saved as DetectionSortBy;
-      }
-    }
-
-    // Only default to today's date for non-search query types.
-    // For search queries, omitting the date allows searching across all dates.
-    // When date is included, the backend restricts results to that single day,
-    // which causes search to return no results for species detected on other days.
-    const date =
-      params.get('date')?.trim() || (queryType !== 'search' ? getLocalDateString() : undefined);
-
-    return {
-      queryType,
-      date,
-      hour: params.get('hour') || undefined,
-      duration: params.get('duration') ? parseInt(params.get('duration')!) : undefined,
-      species: params.get('species') || undefined,
-      search: search || undefined,
-      numResults,
-      offset: parseInt(params.get('offset') || '0'),
-      sortBy,
-    };
+    return parseDetectionQueryParams(window.location.search, {
+      savedResultsPerPage: getSavedResultsPerPage(),
+      savedSortBy: typeof window !== 'undefined' ? localStorage.getItem(SORT_BY_KEY) : null,
+    });
   }
 
   // Fetch detections data
@@ -129,10 +76,15 @@
           : getSavedResultsPerPage();
 
       // Transform API response to match our expected format
+      const hasDateRange = Boolean(queryParams.start_date || queryParams.end_date);
       detectionsData = {
         notes: data.data || [],
         queryType: queryParams.queryType || 'all',
-        date: queryParams.date?.trim() || getLocalDateString(),
+        // A range query owns date filtering; don't fall back to today (that would
+        // render a misleading single-date title).
+        date: queryParams.date?.trim() || (hasDateRange ? '' : getLocalDateString()),
+        startDate: queryParams.start_date,
+        endDate: queryParams.end_date,
         hour: queryParams.hour ? parseInt(queryParams.hour) : undefined,
         duration: queryParams.duration,
         species: queryParams.species,

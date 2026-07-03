@@ -53,6 +53,8 @@
     peakLabelKey?: string;
     /** i18n key for the screen-reader summary; receives { count, species, time }. */
     summaryKey?: string;
+    /** Navigate to a species' detections when its row label is clicked. */
+    onSpeciesClick?: (_scientificName: string) => void;
   }
 
   let {
@@ -67,6 +69,7 @@
     totalLabelKey = 'analytics.advanced.charts.ridgeline.tooltipDetections',
     peakLabelKey = 'analytics.advanced.charts.ridgeline.tooltipPeak',
     summaryKey = 'analytics.advanced.charts.ridgeline.summary',
+    onSpeciesClick,
   }: Props = $props();
 
   // Layout / style constants.
@@ -242,6 +245,24 @@
         .style('font-family', theme.axis.fontFamily)
         .text(truncateLabel(row.label));
       labelText.append('title').text(row.label);
+
+      // A click on the label jumps to the species' detections. Keyboard-accessible
+      // via role/tabindex so the affordance is not mouse-only.
+      if (onSpeciesClick) {
+        const navigate = () => onSpeciesClick(row.scientificName);
+        labelText
+          .classed('ridge-label-link', true)
+          .attr('role', 'link')
+          .attr('tabindex', 0)
+          .attr('aria-label', t('analytics.species.viewDetections', { species: row.label }))
+          .on('click', navigate)
+          .on('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              navigate();
+            }
+          });
+      }
     }
   }
 
@@ -291,5 +312,13 @@
 
   :global(.ridge-area) {
     transition: stroke-width 0.12s ease;
+  }
+
+  :global(.ridge-label-link) {
+    cursor: pointer;
+  }
+
+  :global(.ridge-label-link:hover) {
+    text-decoration: underline;
   }
 </style>

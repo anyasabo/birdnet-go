@@ -33,9 +33,17 @@
     height?: number;
     selectedSpecies?: string[];
     onSpeciesToggle?: (_species: string, _visible: boolean) => void;
+    /** Navigate to a species' detections when its legend label is clicked. */
+    onSpeciesClick?: (_scientificName: string) => void;
   }
 
-  let { data = [], width = 800, height = 400, selectedSpecies = [] }: Props = $props();
+  let {
+    data = [],
+    width = 800,
+    height = 400,
+    selectedSpecies = [],
+    onSpeciesClick,
+  }: Props = $props();
 
   // Non-degenerate fallback for the y-domain max (counts are non-negative; an
   // all-zero range keeps zero at the bottom) plus a fixed headroom above the max.
@@ -341,6 +349,13 @@
             .duration(300)
             .style('opacity', visible ? 0.8 : 0)
             .style('pointer-events', visible ? 'all' : 'none');
+        },
+        onLabelClick: onSpeciesClick,
+        ariaLabel: id => {
+          const label =
+            visibleData.find(s => s.species === id)?.displayName ??
+            localizeSpeciesName(id, id);
+          return t('analytics.species.viewDetections', { species: label });
         },
       });
     }

@@ -648,6 +648,7 @@ export type TranslationKey =
   | 'detections.titles.hourly' // params: hour, date
   | 'detections.titles.hourlyRange' // params: startHour, endHour, date
   | 'detections.titles.species' // params: species, date
+  | 'detections.titles.speciesRange' // params: species, startDate, endDate
   | 'detections.titles.search' // params: query
   | 'detections.titles.allDetections' // params: date
   | 'detections.detail.species'
@@ -1514,6 +1515,7 @@ export type TranslationKey =
   | 'analytics.species.switchToGrid'
   | 'analytics.species.switchToList'
   | 'analytics.species.noSpeciesFound'
+  | 'analytics.species.viewDetections' // params: species
   | 'analytics.species.headers.species'
   | 'analytics.species.headers.detections'
   | 'analytics.species.headers.avgConfidence'
@@ -4087,6 +4089,11 @@ export type TranslationParams = {
     date: string | number;
   };
   'detections.titles.species': { species: string | number; date: string | number };
+  'detections.titles.speciesRange': {
+    species: string | number;
+    startDate: string | number;
+    endDate: string | number;
+  };
   'detections.titles.search': { query: string | number };
   'detections.titles.allDetections': { date: string | number };
   'detections.detail.aria.downloadAudioClip': { name: string | number };
@@ -4176,6 +4183,7 @@ export type TranslationParams = {
   'system.database.migration.prerequisites.warningCount': { count: string | number };
   'system.inference.coDetectedHelp': { seconds: string | number };
   'analytics.hub.card.notEnoughDataHint': { min: string | number };
+  'analytics.species.viewDetections': { species: string | number };
   'analytics.advanced.speciesSelection': { count: string | number; max: string | number };
   'analytics.advanced.detections': { count: string | number };
   'analytics.advanced.charts.accumulation.totalSpecies': { species: string | number };
