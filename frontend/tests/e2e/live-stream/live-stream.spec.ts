@@ -13,8 +13,9 @@ test.describe('Live Stream Page', () => {
     // Should navigate to live-stream URL
     await expect(page).toHaveURL(/.*\/ui\/live-stream/);
 
-    // Should have heading with the page title
-    const heading = page.getByRole('heading', { level: 1 });
+    // Should have heading with the page title (scoped to main content to avoid
+    // matching the duplicate h1 in the top bar)
+    const heading = page.locator('#mainContent').getByRole('heading', { name: 'Live Audio' });
     await expect(heading).toBeVisible();
 
     // Should have the source picker (SelectDropdown renders a <button> with

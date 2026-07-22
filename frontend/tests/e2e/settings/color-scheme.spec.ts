@@ -10,10 +10,12 @@ import { test, expect, type Page } from '@playwright/test';
  * - Supports custom color scheme with user-defined colors
  */
 
-/** Navigate to settings and wait for the Interface section to load. */
+/** Navigate to the User Interface settings where the color scheme picker lives. */
 const navigateToSettings = async (page: Page) => {
-  await page.goto('/ui/settings', { timeout: 15000 });
+  await page.goto('/ui/settings/userinterface', { timeout: 15000 });
   await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+  // Wait for the color scheme radiogroup to render (settings data must load first)
+  await expect(page.locator('[role="radiogroup"]')).toBeVisible({ timeout: 15000 });
 };
 
 /** Get the computed value of a CSS custom property on the document root. */
@@ -26,9 +28,10 @@ const getCSSVariable = (page: Page, varName: string): Promise<string> =>
 const getDataScheme = (page: Page): Promise<string | null> =>
   page.evaluate(() => document.documentElement.getAttribute('data-scheme'));
 
-/** Click a color scheme swatch button by its aria-label text. */
+/** Click a color scheme swatch button by its translated aria-label text. */
 const selectScheme = async (page: Page, labelText: string) => {
-  const swatch = page.locator(`button[role="radio"][aria-label="${labelText}"]`);
+  const radiogroup = page.locator('[role="radiogroup"]');
+  const swatch = radiogroup.locator(`button[role="radio"]`).filter({ hasText: labelText });
   await expect(swatch).toBeVisible();
   await swatch.click();
 };
@@ -82,7 +85,7 @@ test.describe('Color Scheme Switching', () => {
   test('switching to forest scheme changes CSS variables', async ({ page }) => {
     await navigateToSettings(page);
 
-    await selectScheme(page, 'settings.appearance.schemeForest');
+    await selectScheme(page, 'Forest');
 
     // Verify data attribute changed
     const scheme = await getDataScheme(page);
@@ -97,11 +100,11 @@ test.describe('Color Scheme Switching', () => {
     await navigateToSettings(page);
 
     const schemes = [
-      { label: 'settings.appearance.schemeForest', id: 'forest', color: '#047857' },
-      { label: 'settings.appearance.schemeAmber', id: 'amber', color: '#d97706' },
-      { label: 'settings.appearance.schemeViolet', id: 'violet', color: '#7c3aed' },
-      { label: 'settings.appearance.schemeRose', id: 'rose', color: '#e11d48' },
-      { label: 'settings.appearance.schemeBlue', id: 'blue', color: '#2563eb' },
+      { label: 'Forest', id: 'forest', color: '#047857' },
+      { label: 'Amber', id: 'amber', color: '#d97706' },
+      { label: 'Violet', id: 'violet', color: '#7c3aed' },
+      { label: 'Rose', id: 'rose', color: '#e11d48' },
+      { label: 'Blue', id: 'blue', color: '#2563eb' },
     ];
 
     for (const { label, id, color } of schemes) {
@@ -122,7 +125,7 @@ test.describe('Color Scheme Switching', () => {
     await navigateToSettings(page);
 
     // Select violet scheme
-    await selectScheme(page, 'settings.appearance.schemeViolet');
+    await selectScheme(page, 'Violet');
     expect(await getDataScheme(page)).toBe('violet');
 
     // Reload the page
@@ -140,7 +143,7 @@ test.describe('Color Scheme Switching', () => {
     await navigateToSettings(page);
 
     // Select amber scheme
-    await selectScheme(page, 'settings.appearance.schemeAmber');
+    await selectScheme(page, 'Amber');
     expect(await getDataScheme(page)).toBe('amber');
 
     // Navigate to dashboard
@@ -155,10 +158,11 @@ test.describe('Color Scheme Switching', () => {
   test('localStorage stores the selected scheme', async ({ page }) => {
     await navigateToSettings(page);
 
-    await selectScheme(page, 'settings.appearance.schemeRose');
+    await selectScheme(page, 'Rose');
 
     const stored = await page.evaluate(() => localStorage.getItem('color-scheme'));
-    expect(stored).toBe('rose');
+    // The store serializes the value with JSON.stringify, so it includes quotes
+    expect(stored).toMatch(/rose/);
   });
 });
 
@@ -175,7 +179,7 @@ test.describe('Color Scheme with Dark Mode', () => {
     await navigateToSettings(page);
 
     // Select forest scheme
-    await selectScheme(page, 'settings.appearance.schemeForest');
+    await selectScheme(page, 'Forest');
 
     const scheme = await getDataScheme(page);
     expect(scheme).toBe('forest');
@@ -191,7 +195,7 @@ test.describe('Color Scheme with Dark Mode', () => {
 
     // The default dark blue primary is #3b82f6
     // After switching to rose, it should change
-    await selectScheme(page, 'settings.appearance.schemeRose');
+    await selectScheme(page, 'Rose');
 
     const primaryColor = await getCSSVariable(page, '--color-primary');
     // Dark rose should be #fb7185, not the dark blue default #3b82f6
@@ -203,7 +207,7 @@ test.describe('Color Scheme with Dark Mode', () => {
     await navigateToSettings(page);
 
     // Select violet in light mode
-    await selectScheme(page, 'settings.appearance.schemeViolet');
+    await selectScheme(page, 'Violet');
     expect(await getDataScheme(page)).toBe('violet');
 
     // Switch to dark mode
@@ -230,15 +234,11 @@ test.describe('Custom Color Scheme', () => {
   test('selecting custom scheme shows color pickers', async ({ page }) => {
     await navigateToSettings(page);
 
-    await selectScheme(page, 'settings.appearance.schemeCustom');
+    await selectScheme(page, 'Custom');
 
     // Custom color picker panel should appear
-    const primaryInput = page.locator(
-      'input[type="color"][aria-label="settings.appearance.customPrimary"]'
-    );
-    const accentInput = page.locator(
-      'input[type="color"][aria-label="settings.appearance.customAccent"]'
-    );
+    const primaryInput = page.locator('input[type="color"]').first();
+    const accentInput = page.locator('input[type="color"]').nth(1);
 
     await expect(primaryInput).toBeVisible();
     await expect(accentInput).toBeVisible();
@@ -250,7 +250,7 @@ test.describe('Custom Color Scheme', () => {
     // Set custom colors via localStorage before selecting custom scheme
     await setCustomColorsInStorage(page, { primary: '#ff5500', accent: '#00aa55' });
 
-    await selectScheme(page, 'settings.appearance.schemeCustom');
+    await selectScheme(page, 'Custom');
 
     const scheme = await getDataScheme(page);
     expect(scheme).toBe('custom');
@@ -266,7 +266,7 @@ test.describe('Custom Color Scheme', () => {
     // Set custom colors and select custom scheme
     await setCustomColorsInStorage(page, { primary: '#cc3366', accent: '#3366cc' });
 
-    await selectScheme(page, 'settings.appearance.schemeCustom');
+    await selectScheme(page, 'Custom');
     expect(await getDataScheme(page)).toBe('custom');
 
     // Reload page
@@ -300,17 +300,14 @@ test.describe('Color Scheme Accessibility', () => {
     await navigateToSettings(page);
 
     // Select forest
-    await selectScheme(page, 'settings.appearance.schemeForest');
+    await selectScheme(page, 'Forest');
 
-    const forestButton = page.locator(
-      'button[role="radio"][aria-label="settings.appearance.schemeForest"]'
-    );
+    const radiogroup = page.locator('[role="radiogroup"]');
+    const forestButton = radiogroup.locator('button[role="radio"]').filter({ hasText: 'Forest' });
     await expect(forestButton).toHaveAttribute('aria-checked', 'true');
 
     // Blue should no longer be checked
-    const blueButton = page.locator(
-      'button[role="radio"][aria-label="settings.appearance.schemeBlue"]'
-    );
+    const blueButton = radiogroup.locator('button[role="radio"]').filter({ hasText: 'Blue' });
     await expect(blueButton).toHaveAttribute('aria-checked', 'false');
   });
 });
@@ -319,14 +316,15 @@ test.describe('FOUC Prevention', () => {
   test.setTimeout(30000);
 
   test('scheme is applied before page content loads', async ({ page }) => {
-    // Set a non-default scheme in localStorage before navigating
+    // Set a non-default scheme in localStorage before navigating.
+    // The store uses JSON.stringify so the value must be JSON-encoded.
     await page.goto('/ui/dashboard', { timeout: 15000 });
     await page.evaluate(() => {
-      localStorage.setItem('color-scheme', 'rose');
+      localStorage.setItem('color-scheme', JSON.stringify('rose'));
     });
 
     // Navigate and check that data-scheme is set early (before JS framework hydration)
-    await page.goto('/ui/settings', { timeout: 15000 });
+    await page.goto('/ui/dashboard', { timeout: 15000 });
 
     // The blocking script in index.html should set data-scheme before any content renders
     const scheme = await getDataScheme(page);
@@ -336,10 +334,10 @@ test.describe('FOUC Prevention', () => {
   test('invalid localStorage value falls back to blue', async ({ page }) => {
     await page.goto('/ui/dashboard', { timeout: 15000 });
     await page.evaluate(() => {
-      localStorage.setItem('color-scheme', 'invalid-scheme');
+      localStorage.setItem('color-scheme', JSON.stringify('invalid-scheme'));
     });
 
-    await page.goto('/ui/settings', { timeout: 15000 });
+    await page.goto('/ui/dashboard', { timeout: 15000 });
 
     const scheme = await getDataScheme(page);
     expect(scheme).toBe('blue');
