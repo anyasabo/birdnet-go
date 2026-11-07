@@ -9,6 +9,7 @@ import { downloadDetectionAudio } from '$lib/utils/audioDownload';
 // is wired directly through the shared download helper.
 
 vi.mock('$lib/stores/navigation.svelte', () => ({
+  handleAppLinkClick: vi.fn(),
   navigation: {
     currentPath: '/ui/detections',
     navigate: vi.fn(),
@@ -44,6 +45,26 @@ async function openMenuAndClick(itemName: RegExp) {
   const item = screen.getByRole('menuitem', { name: itemName });
   await fireEvent.click(item);
 }
+
+describe('DetectionRow links', () => {
+  it('links the date to the detection', () => {
+    render(DetectionRow, { props: { detection: createMockDetection({ id: 456 }) } });
+
+    expect(screen.getByRole('link', { name: /2024-01-15/ })).toHaveAttribute(
+      'href',
+      '/ui/detections/456'
+    );
+  });
+
+  it('links the scientific name to the species across all dates', () => {
+    render(DetectionRow, { props: { detection: createMockDetection() } });
+
+    expect(screen.getByRole('link', { name: 'Turdus migratorius' })).toHaveAttribute(
+      'href',
+      '/ui/detections?queryType=species&species=Turdus+migratorius'
+    );
+  });
+});
 
 describe('DetectionRow action callbacks', () => {
   beforeEach(() => {

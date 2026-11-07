@@ -61,6 +61,10 @@ export interface DetectionsListData {
   notes: Detection[];
   queryType: 'hourly' | 'species' | 'search' | 'all';
   date: string;
+  /** The date the query filters on; unset when it is scoped by a range or spans all dates. */
+  filterDate?: string;
+  startDate?: string;
+  endDate?: string;
   hour?: number;
   duration?: number;
   species?: string;

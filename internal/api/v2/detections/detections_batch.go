@@ -48,6 +48,8 @@ type BatchResolveRequest struct {
 	QueryType string `json:"queryType"`
 	Species   string `json:"species,omitempty"`
 	Date      string `json:"date,omitempty"`
+	StartDate string `json:"startDate,omitempty"`
+	EndDate   string `json:"endDate,omitempty"`
 	Search    string `json:"search,omitempty"`
 	Hour      string `json:"hour,omitempty"`
 	Duration  int    `json:"duration,omitempty"`
@@ -229,8 +231,9 @@ func (c *Handler) BatchLockDetections(ctx echo.Context) error {
 }
 
 // BatchResolveDetections resolves a query to a list of detection IDs without modifying any data.
-// Returns an error if the matching set exceeds maxBatchSize, or if the date is not YYYY-MM-DD
-// (or, for all and search queries, one of the search box date shortcuts).
+// Returns an error if the matching set exceeds maxBatchSize, if the date is not YYYY-MM-DD
+// (or, for all and search queries, one of the search box date shortcuts), if startDate and
+// endDate are not both set or both empty, or if a species query names no species.
 func (c *Handler) BatchResolveDetections(ctx echo.Context) error {
 	var req BatchResolveRequest
 	if err := ctx.Bind(&req); err != nil {
@@ -251,6 +254,19 @@ func (c *Handler) BatchResolveDetections(ctx echo.Context) error {
 		}
 	}
 
+	// The date range filter needs both bounds and ignores one alone, which would widen
+	// the bulk operation to every date.
+	if err := c.validateDateParameters(req.StartDate, req.EndDate, ctx); err != nil {
+		return c.HandleError(ctx, err, "Invalid date range", http.StatusBadRequest)
+	}
+	if (req.StartDate == "") != (req.EndDate == "") {
+		return c.HandleError(ctx, fmt.Errorf("startDate and endDate must be set together"),
+			"Invalid date range", http.StatusBadRequest)
+	}
+	if req.QueryType == queryTypeSpecies && req.Species == "" {
+		return c.HandleError(ctx, fmt.Errorf("%s", errSpeciesRequired), "Invalid species", http.StatusBadRequest)
+	}
+
 	duration := req.Duration
 	if duration == 0 && req.Hour != "" {
 		duration = 1
@@ -260,6 +276,8 @@ func (c *Handler) BatchResolveDetections(ctx echo.Context) error {
 		QueryType:  req.QueryType,
 		Species:    req.Species,
 		Date:       req.Date,
+		StartDate:  req.StartDate,
+		EndDate:    req.EndDate,
 		Search:     req.Search,
 		Hour:       req.Hour,
 		Duration:   duration,

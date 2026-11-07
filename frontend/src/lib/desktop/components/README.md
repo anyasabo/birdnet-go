@@ -127,6 +127,7 @@ This folder contains **shared components** used across the application. Feature-
 - `Select.svelte` - Select dropdown
 - `SelectionToolbar.svelte` - Sticky toolbar for multiselect list views (selection count, select-all banner, action slot)
 - `SkeletonDailySummary.svelte` - Loading skeleton for daily summary cards
+- `SpeciesLink.svelte` - Link from a species to its detections
 - `StatusPill.svelte` - Status pill indicator
 - `SystemInfoCard.svelte` - System information display
 - `TestSuccessNote.svelte` - Test success notification component

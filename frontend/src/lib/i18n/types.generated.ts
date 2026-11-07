@@ -706,6 +706,8 @@ export type TranslationKey =
   | 'detections.titles.hourly' // params: hour, date
   | 'detections.titles.hourlyRange' // params: startHour, endHour, date
   | 'detections.titles.species' // params: species, date
+  | 'detections.titles.speciesRange' // params: species, startDate, endDate
+  | 'detections.titles.speciesAllDates' // params: species
   | 'detections.titles.search' // params: query
   | 'detections.titles.allDetections' // params: date
   | 'detections.detail.species'
@@ -4582,6 +4584,12 @@ export type TranslationParams = {
     date: string | number;
   };
   'detections.titles.species': { species: string | number; date: string | number };
+  'detections.titles.speciesRange': {
+    species: string | number;
+    startDate: string | number;
+    endDate: string | number;
+  };
+  'detections.titles.speciesAllDates': { species: string | number };
   'detections.titles.search': { query: string | number };
   'detections.titles.allDetections': { date: string | number };
   'detections.detail.aria.downloadAudioClip': { name: string | number };

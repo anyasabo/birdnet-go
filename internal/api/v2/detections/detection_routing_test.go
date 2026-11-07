@@ -36,6 +36,11 @@ func TestNeedsAdvancedRouting(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "species without a date spans all dates",
+			params:   detectionQueryParams{QueryType: queryTypeSpecies, Species: "Turdus merula"},
+			expected: true,
+		},
+		{
 			name:     "search with just search term",
 			params:   detectionQueryParams{QueryType: queryTypeSearch, Search: "robin"},
 			expected: false,
@@ -125,7 +130,7 @@ func TestNeedsAdvancedRouting(t *testing.T) {
 		},
 		{
 			name:     "species on species queryType does NOT trigger (handled natively)",
-			params:   detectionQueryParams{QueryType: queryTypeSpecies, Species: "Turdus merula"},
+			params:   detectionQueryParams{QueryType: queryTypeSpecies, Species: "Turdus merula", Date: "2025-06-01"},
 			expected: false,
 		},
 
@@ -191,7 +196,7 @@ func TestNeedsAdvancedRouting(t *testing.T) {
 		},
 		{
 			name:     "hour on species queryType does NOT trigger (handled natively)",
-			params:   detectionQueryParams{QueryType: queryTypeSpecies, Species: "Turdus merula", Hour: "14"},
+			params:   detectionQueryParams{QueryType: queryTypeSpecies, Species: "Turdus merula", Date: "2025-06-01", Hour: "14"},
 			expected: false,
 		},
 	}

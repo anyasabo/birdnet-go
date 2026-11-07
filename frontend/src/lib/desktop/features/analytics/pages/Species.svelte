@@ -7,6 +7,8 @@
   import { getStoredValue, setStoredValue } from '$lib/utils/storage';
   import { buildAppUrl } from '$lib/utils/urlHelpers';
   import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
+  import type { SpeciesDateRange } from '$lib/utils/detectionUrls';
+  import SpeciesLink from '$lib/desktop/components/ui/SpeciesLink.svelte';
   import { handleBirdImageError } from '$lib/desktop/components/ui/image-utils';
   import { onMount, onDestroy } from 'svelte';
   import SortableHeader from '$lib/desktop/components/ui/SortableHeader.svelte';
@@ -127,6 +129,9 @@
   let debouncedSearchTerm = $state<string>('');
   let viewMode = $state<ViewMode>('grid');
   let selectedSpecies = $state<SpeciesData | null>(null);
+  // The range of the loaded list, not the pending filter inputs: species links keep
+  // the scope of the counts shown next to them.
+  let appliedRange = $state<SpeciesDateRange>({});
   let showDetailModal = $state(false);
 
   // Read once so both filters and the applied-sort indicator start at the same persisted value.
@@ -221,7 +226,7 @@
 
     try {
       // Determine date range based on time period
-      let startDate, endDate;
+      let startDate: string | null, endDate: string | null;
       const today = new Date();
 
       switch (filters.timePeriod) {
@@ -255,6 +260,8 @@
           endDate = null;
           break;
       }
+
+      appliedRange = { startDate, endDate };
 
       // Build query parameters
       const params = new URLSearchParams();
@@ -624,7 +631,7 @@
       {#if !isLoading && viewMode === 'grid' && filteredSpecies.length > 0}
         <div class="species-grid hidden sm:grid">
           {#each filteredSpecies as species, index (`${species.scientific_name}_${index}`)}
-            <SpeciesCard {species} />
+            <SpeciesCard {species} range={appliedRange} />
           {/each}
         </div>
       {/if}
@@ -673,7 +680,9 @@
                       </div>
                       <div>
                         <div class="font-bold">
-                          {displayName}
+                          <SpeciesLink scientificName={species.scientific_name} range={appliedRange}
+                            >{displayName}</SpeciesLink
+                          >
                         </div>
                         <div class="text-sm opacity-50 italic">{species.scientific_name}</div>
                       </div>

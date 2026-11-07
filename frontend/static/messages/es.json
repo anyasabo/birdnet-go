@@ -885,6 +885,8 @@
       "hourly": "Resultados por hora para las {hour}:00 del {date}",
       "hourlyRange": "Resultados por hora de {startHour}:00 a {endHour}:00 del {date}",
       "species": "Resultados para {species} el {date}",
+      "speciesRange": "Resultados para {species} del {startDate} al {endDate}",
+      "speciesAllDates": "Todas las detecciones de {species}",
       "search": "Resultados de búsqueda para \"{query}\"",
       "allDetections": "Todas las detecciones del {date}"
     },

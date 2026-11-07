@@ -17,6 +17,9 @@
   import { t } from '$lib/i18n';
   import { buildAppUrl } from '$lib/utils/urlHelpers';
   import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
+  import { handleAppLinkClick } from '$lib/stores/navigation.svelte';
+  import { buildDetectionDetailUrl } from '$lib/utils/detectionUrls';
+  import SpeciesLink from '$lib/desktop/components/ui/SpeciesLink.svelte';
 
   interface Props {
     detection: Detection;
@@ -69,7 +72,10 @@
   <div class="species-details">
     <!-- Name row with verification badge -->
     <div class="species-name-row">
-      <span class="species-name">{displayName}</span>
+      <SpeciesLink
+        scientificName={detection.scientificName}
+        className="species-name hover:text-white">{displayName}</SpeciesLink
+      >
       {#if isVerified}
         <span
           class="verified-badge"
@@ -109,7 +115,11 @@
 
   <!-- Time Info (right-aligned) -->
   <div class="time-info">
-    <span class="detection-time">{detection.time}</span>
+    <a
+      href={buildDetectionDetailUrl(detection.id)}
+      class="detection-time hover:underline"
+      onclick={handleAppLinkClick}>{detection.time}</a
+    >
     <span class="relative-time">{relativeTime}</span>
   </div>
 </div>
@@ -161,7 +171,7 @@
     gap: 0.375rem;
   }
 
-  .species-name {
+  .species-name-row :global(.species-name) {
     font-weight: 600;
     font-size: 0.9375rem;
     color: white;

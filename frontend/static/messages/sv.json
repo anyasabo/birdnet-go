@@ -885,6 +885,8 @@
       "hourly": "Timresultat för {hour}:00 den {date}",
       "hourlyRange": "Timresultat från {startHour}:00 till {endHour}:00 den {date}",
       "species": "Resultat för {species} den {date}",
+      "speciesRange": "Resultat för {species} från {startDate} till {endDate}",
+      "speciesAllDates": "Alla detektioner av {species}",
       "search": "Sökresultat för \"{query}\"",
       "allDetections": "Alla detekteringar för {date}"
     },

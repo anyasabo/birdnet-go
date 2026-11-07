@@ -40,6 +40,21 @@ vi.mock('svelte/transition', async importOriginal => {
 
 import CurrentlyHearingCard from './CurrentlyHearingCard.svelte';
 
+describe('CurrentlyHearingCard links', () => {
+  afterEach(cleanup);
+
+  it('links the species to its detections', () => {
+    const { getByRole } = createComponentTestFactory(CurrentlyHearingCard).render({
+      props: { detections: [pending({ scientificName: 'Bubo virginianus' })] },
+    });
+
+    expect(getByRole('link')).toHaveAttribute(
+      'href',
+      '/ui/detections?queryType=species&species=Bubo+virginianus'
+    );
+  });
+});
+
 function pending(overrides: Partial<PendingDetection> = {}): PendingDetection {
   return {
     species: 'American Robin',

@@ -47,7 +47,11 @@ const (
 	// queryType values for detection queries
 	queryTypeHourly  = "hourly"
 	queryTypeSpecies = "species"
-	queryTypeSearch  = "search"
+
+	// errSpeciesRequired refuses a species query with nothing to filter on, which
+	// would otherwise match every detection.
+	errSpeciesRequired = "species parameter is required for species query type"
+	queryTypeSearch    = "search"
 
 	// Default sort order for non-hourly query types
 	sortByDateDesc = "date_desc"
@@ -424,6 +428,10 @@ func (c *Handler) parseDetectionQueryParams(ctx echo.Context) (*detectionQueryPa
 		}
 	}
 
+	if params.QueryType == queryTypeSpecies && params.Species == "" {
+		return nil, echo.NewHTTPError(http.StatusBadRequest, errSpeciesRequired)
+	}
+
 	// Validate hour parameter based on query type
 	if params.QueryType == queryTypeHourly {
 		// Hourly queries require a single valid integer hour (0-23), not a range
@@ -684,6 +692,12 @@ func (p *detectionQueryParams) needsAdvancedRouting() bool {
 		return true
 	}
 	if p.QueryType != queryTypeSearch && p.Search != "" {
+		return true
+	}
+
+	// A species query without a date spans all dates, which the species handler
+	// cannot express on every datastore.
+	if p.QueryType == queryTypeSpecies && p.Date == "" {
 		return true
 	}
 
@@ -1080,10 +1094,11 @@ func (c *Handler) getHourlyDetections(ctx context.Context, date, hour string, du
 	})
 }
 
-// getSpeciesDetections handles species query type logic. GetDetections validates the
-// date as YYYY-MM-DD or empty and sets the duration to at least one hour in
-// parseDetectionQueryParams, so the repository does not see a date it would ignore
-// there. BatchResolveDetections builds its parameters without that validation.
+// getSpeciesDetections handles species query type logic. A query without a date routes
+// to advanced search, so the date is never empty here. GetDetections validates it as
+// YYYY-MM-DD and sets the duration to at least one hour in parseDetectionQueryParams, so
+// the repository does not see a date it would ignore there. BatchResolveDetections
+// builds its parameters without that validation.
 func (c *Handler) getSpeciesDetections(ctx context.Context, species, date, hour string, duration, numResults, offset int) ([]*detectionPkg.Result, int64, error) {
 	return c.cachedPage(ctx, speciesPageKey(species, date, hour, duration, numResults, offset), func(loadCtx context.Context) ([]*detectionPkg.Result, int64, error) {
 		results, totalCount, err := c.Repo.GetBySpecies(loadCtx, species, date, hour, duration, numResults, offset)

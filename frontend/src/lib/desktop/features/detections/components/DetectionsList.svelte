@@ -65,6 +65,7 @@
     hydrateExcludedSpecies,
   } from '$lib/stores/excludedSpecies.svelte';
   import DetectionCardMobile from './DetectionCardMobile.svelte';
+  import { buildBatchResolveQuery } from '$lib/utils/detectionUrls';
   import DetectionRow from './DetectionRow.svelte';
   import DetectionsCardView from './DetectionsCardView.svelte';
   import { appState } from '$lib/stores/appState.svelte';
@@ -122,6 +123,16 @@
         return t('detections.titles.hourly', { hour: data.hour, date: data.date });
 
       case 'species':
+        if (data.startDate && data.endDate) {
+          return t('detections.titles.speciesRange', {
+            species: data.species,
+            startDate: data.startDate,
+            endDate: data.endDate,
+          });
+        }
+        if (!data.filterDate) {
+          return t('detections.titles.speciesAllDates', { species: data.species });
+        }
         return t('detections.titles.species', { species: data.species, date: data.date });
 
       case 'search':
@@ -247,6 +258,14 @@
     onSortChange?.(toBackendSortBy(sortField, sortDirection));
   }
 
+  // A selection belongs to one query: bulk actions must not reach a list that a
+  // link has since replaced.
+  const queryIdentity = $derived(data ? JSON.stringify(buildBatchResolveQuery(data)) : '');
+  $effect(() => {
+    void queryIdentity;
+    untrack(() => selection.clear());
+  });
+
   // Selection mode
   let canEdit = $derived(!$auth.security.enabled || $auth.security.accessAllowed);
   const selection = useSelectionMode(() => data?.totalResults ?? 0);
@@ -330,14 +349,7 @@
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            queryType: data.queryType,
-            species: data.species,
-            date: data.date,
-            search: data.search,
-            hour: data.hour !== undefined ? String(data.hour) : undefined,
-            duration: data.duration !== undefined ? data.duration : undefined,
-          }),
+          body: JSON.stringify(buildBatchResolveQuery(data)),
         }
       );
       return resp.ids;

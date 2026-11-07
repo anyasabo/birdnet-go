@@ -23,6 +23,7 @@
   import ErrorAlert from '$lib/desktop/components/ui/ErrorAlert.svelte';
   import { handleBirdImageError } from '$lib/desktop/components/ui/image-utils.js';
   import { t } from '$lib/i18n';
+  import SpeciesLink from '$lib/desktop/components/ui/SpeciesLink.svelte';
   import type { Detection, ImageAttribution } from '$lib/types/detection.types';
   import { hasReviewPermission, isAuthenticated } from '$lib/utils/auth';
   import { formatLocalDateTime } from '$lib/utils/date';
@@ -550,7 +551,7 @@
         <!-- Species identity -->
         <div class="hero-species">
           <h1 id="species-heading" class="species-display-name">
-            {displayName}
+            <SpeciesLink scientificName={det.scientificName}>{displayName}</SpeciesLink>
             <span class="sr-only">{t('detections.detail.aria.speciesHeadingSuffix')}</span>
           </h1>
           <p class="species-scientific-name">

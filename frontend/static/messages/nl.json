@@ -885,6 +885,8 @@
       "hourly": "Herkend om {hour}:00 uur op {date}",
       "hourlyRange": "Herkend tussen {startHour}:00 en {endHour}:00 uur op {date}",
       "species": "{species}, herkend op {date}",
+      "speciesRange": "{species}, herkend van {startDate} tot {endDate}",
+      "speciesAllDates": "Alle herkenningen van {species}",
       "search": "Gevonden voor \"{query}\"",
       "allDetections": "Alles herkend op {date}"
     },

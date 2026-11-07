@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -307,10 +308,10 @@ func TestBatchResolveDetections(t *testing.T) {
 	}{
 		{
 			name: "resolves species query to IDs",
-			body: BatchResolveRequest{QueryType: "species", Species: "Turdus merula"},
+			body: BatchResolveRequest{QueryType: "species", Species: "Turdus merula", Date: "2025-03-07"},
 			mockSetup: func(m *mocks.MockInterface) {
-				m.EXPECT().SpeciesDetections("Turdus merula", "", "", 0, false, maxBatchSize+1, 0).Return(mockNotes, nil).Once()
-				m.EXPECT().CountSpeciesDetections("Turdus merula", "", "", 0).Return(int64(2), nil).Once()
+				m.EXPECT().SpeciesDetections("Turdus merula", "2025-03-07", "", 0, false, maxBatchSize+1, 0).Return(mockNotes, nil).Once()
+				m.EXPECT().CountSpeciesDetections("Turdus merula", "2025-03-07", "", 0).Return(int64(2), nil).Once()
 			},
 			expectedStatus: http.StatusOK,
 			checkResult: func(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -320,6 +321,53 @@ func TestBatchResolveDetections(t *testing.T) {
 				assert.Equal(t, 2, result.Count)
 				assert.Len(t, result.IDs, 2)
 			},
+		},
+		{
+			name: "resolves a species date range through advanced search",
+			body: BatchResolveRequest{QueryType: "species", Species: "Turdus merula", StartDate: "2025-03-01", EndDate: "2025-03-07"},
+			mockSetup: func(m *mocks.MockInterface) {
+				m.EXPECT().SearchNotesAdvanced(mock.MatchedBy(func(f *datastore.AdvancedSearchFilters) bool {
+					return slices.Equal(f.Species, []string{"Turdus merula"}) &&
+						f.DateRange != nil &&
+						f.DateRange.Start.Format(time.DateOnly) == "2025-03-01" &&
+						f.DateRange.End.Format(time.DateOnly) == "2025-03-07"
+				})).Return(mockNotes, int64(2), nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "resolves a species without a date across all dates",
+			body: BatchResolveRequest{QueryType: "species", Species: "Turdus merula"},
+			mockSetup: func(m *mocks.MockInterface) {
+				m.EXPECT().SearchNotesAdvanced(mock.MatchedBy(func(f *datastore.AdvancedSearchFilters) bool {
+					return slices.Equal(f.Species, []string{"Turdus merula"}) && f.DateRange == nil
+				})).Return(mockNotes, int64(2), nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "refuses a range with one bound before any lookup",
+			body:           BatchResolveRequest{QueryType: "species", Species: "Turdus merula", StartDate: "2025-03-01"},
+			mockSetup:      func(*mocks.MockInterface) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "refuses a species query without a species before any lookup",
+			body:           BatchResolveRequest{QueryType: "species"},
+			mockSetup:      func(*mocks.MockInterface) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "refuses a malformed start date before any lookup",
+			body:           BatchResolveRequest{QueryType: "species", Species: "Turdus merula", StartDate: "2025-3-7"},
+			mockSetup:      func(*mocks.MockInterface) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "refuses a reversed date range before any lookup",
+			body:           BatchResolveRequest{QueryType: "species", Species: "Turdus merula", StartDate: "2025-03-08", EndDate: "2025-03-07"},
+			mockSetup:      func(*mocks.MockInterface) {},
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "refuses a malformed date on a species query before any lookup",

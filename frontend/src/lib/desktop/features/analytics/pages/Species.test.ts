@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { cleanup, fireEvent, waitFor } from '@testing-library/svelte';
+import { cleanup, findByRole, fireEvent, waitFor } from '@testing-library/svelte';
 import { createComponentTestFactory } from '../../../../../test/render-helpers';
 import { setBasePath, resetBasePath } from '$lib/utils/urlHelpers';
 import Species from './Species.svelte';
@@ -170,6 +170,33 @@ describe('Species (analytics page) — sortable column headers', () => {
       el.textContent.trim()
     );
   }
+
+  const linkParams = (container: HTMLElement) => {
+    const link = container.querySelector('table tbody a[href*="queryType=species"]');
+    return new URL(link?.getAttribute('href') ?? '', 'http://localhost').searchParams;
+  };
+
+  async function choosePeriod(container: HTMLElement, name: string) {
+    const trigger = container.querySelector('#timePeriod');
+    if (!trigger) throw new Error('expected the time period control');
+    await fireEvent.click(trigger);
+    await fireEvent.click(await findByRole(document.body, 'option', { name }));
+  }
+
+  it('scopes species links to the applied period, not a pending one', async () => {
+    const { container } = await renderListView();
+    expect(linkParams(container).has('start_date')).toBe(false);
+
+    await choosePeriod(container, 'analytics.timePeriodOptions.lastWeek');
+    expect(linkParams(container).has('start_date')).toBe(false);
+
+    const form = container.querySelector('#speciesFiltersForm');
+    if (!form) throw new Error('expected the filter form');
+    await fireEvent.submit(form);
+
+    await waitFor(() => expect(linkParams(container).has('start_date')).toBe(true));
+    expect(linkParams(container).has('end_date')).toBe(true);
+  });
 
   it('defaults to sorting by detection count descending', async () => {
     const { container } = await renderListView();

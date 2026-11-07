@@ -20,6 +20,7 @@ Props:
   import { buildAppUrl } from '$lib/utils/urlHelpers';
   import { handleBirdImageError } from '$lib/desktop/components/ui/image-utils';
   import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
+  import SpeciesLink from '$lib/desktop/components/ui/SpeciesLink.svelte';
   import { settingsStore } from '$lib/stores/settings';
 
   interface Props {
@@ -231,7 +232,7 @@ Props:
           <!-- Species info -->
           <div class="flex flex-col">
             <span class="text-sm font-medium leading-tight text-[var(--color-base-content)]">
-              {displayName}
+              <SpeciesLink scientificName={detection.scientificName}>{displayName}</SpeciesLink>
             </span>
             <span class="text-xs text-[var(--color-base-content)]/60">
               {elapsedText}

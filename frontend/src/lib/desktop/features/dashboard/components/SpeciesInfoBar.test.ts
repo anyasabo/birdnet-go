@@ -27,6 +27,16 @@ describe('SpeciesInfoBar', () => {
     resetBasePath();
   });
 
+  it('links the species and the time', () => {
+    const { getByRole } = speciesInfoBar.render({ props: { detection: baseDetection } });
+
+    expect(getByRole('link', { name: "Wilson's Warbler" })).toHaveAttribute(
+      'href',
+      '/ui/detections?queryType=species&species=Cardellina+pusilla'
+    );
+    expect(getByRole('link', { name: '10:00' })).toHaveAttribute('href', '/ui/detections/1');
+  });
+
   it('builds the species image URL without a base path by default', () => {
     const { container } = speciesInfoBar.render({ props: { detection: baseDetection } });
 

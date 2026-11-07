@@ -135,6 +135,24 @@ describe('DetectionDetail audio download', () => {
     vi.unstubAllGlobals();
   });
 
+  it('links the species heading to the species across all dates', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(jsonResponse(makeDetection({ scientificName: 'Bubo virginianus' })))
+      )
+    );
+
+    const { container } = detailTest.render({ detectionId: '1239' });
+
+    await waitFor(() => {
+      expect(container.querySelector('#species-heading a')).toHaveAttribute(
+        'href',
+        '/ui/detections?queryType=species&species=Bubo+virginianus'
+      );
+    });
+  });
+
   it('uses the ID-based endpoint when downloading the original audio', async () => {
     const detection = makeDetection({
       id: 1239,

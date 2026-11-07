@@ -1,6 +1,11 @@
+import type { DetectionsListData } from '$lib/types/detection.types';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  buildBatchResolveQuery,
+  buildDetectionDetailUrl,
   buildHourlyDetectionUrl,
+  buildSpeciesRangeDetectionUrl,
+  parseDetectionDateScope,
   buildSpeciesDetectionUrl,
   buildSpeciesHourUrl,
 } from '../detectionUrls';
@@ -16,6 +21,108 @@ describe('detectionUrls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetBasePath();
+  });
+
+  describe('buildDetectionDetailUrl', () => {
+    it('points at the detection page under the basepath', () => {
+      setBasePath('/birdnet');
+      expect(buildDetectionDetailUrl(42)).toBe('/birdnet/ui/detections/42');
+    });
+  });
+
+  describe('buildSpeciesRangeDetectionUrl', () => {
+    it('omits every date for an all-dates link', () => {
+      expect(buildSpeciesRangeDetectionUrl('Bubo virginianus')).toBe(
+        '/ui/detections?queryType=species&species=Bubo+virginianus'
+      );
+    });
+
+    it('drops a range with one bound', () => {
+      expect(buildSpeciesRangeDetectionUrl('Bubo virginianus', { startDate: '2026-10-01' })).toBe(
+        '/ui/detections?queryType=species&species=Bubo+virginianus'
+      );
+    });
+
+    it('adds the range bounds', () => {
+      expect(
+        buildSpeciesRangeDetectionUrl('Bubo virginianus', {
+          startDate: '2026-10-01',
+          endDate: '2026-10-31',
+        })
+      ).toBe(
+        '/ui/detections?queryType=species&species=Bubo+virginianus&start_date=2026-10-01&end_date=2026-10-31'
+      );
+      expect(
+        buildSpeciesRangeDetectionUrl('Bubo virginianus', { startDate: null, endDate: null })
+      ).toBe('/ui/detections?queryType=species&species=Bubo+virginianus');
+    });
+  });
+
+  describe('buildBatchResolveQuery', () => {
+    const data: DetectionsListData = {
+      notes: [],
+      queryType: 'species',
+      species: 'Bubo virginianus',
+      date: '2026-11-01',
+      numResults: 25,
+      offset: 0,
+      totalResults: 0,
+      itemsPerPage: 25,
+      currentPage: 1,
+      totalPages: 1,
+      showingFrom: 0,
+      showingTo: 0,
+    };
+
+    it('sends the range of the list, not the display date', () => {
+      const query = buildBatchResolveQuery({
+        ...data,
+        startDate: '2026-10-01',
+        endDate: '2026-10-31',
+      });
+      expect(query).toMatchObject({ startDate: '2026-10-01', endDate: '2026-10-31' });
+      expect(query.date).toBeUndefined();
+    });
+
+    it('sends no date for an all-dates list', () => {
+      expect(buildBatchResolveQuery(data).date).toBeUndefined();
+    });
+
+    it('sends the date of a single-day list', () => {
+      expect(buildBatchResolveQuery({ ...data, filterDate: '2026-10-05' }).date).toBe('2026-10-05');
+    });
+  });
+
+  describe('parseDetectionDateScope', () => {
+    const today = '2026-11-01';
+    const scope = (search: string, queryType: string) =>
+      parseDetectionDateScope(new URLSearchParams(search), queryType, today);
+
+    it('keeps an explicit date', () => {
+      expect(scope('date=2026-10-05', 'species')).toEqual({ date: '2026-10-05' });
+    });
+
+    it('lets a range replace the single date', () => {
+      expect(scope('start_date=2026-10-01&end_date=2026-10-31', 'species')).toEqual({
+        start_date: '2026-10-01',
+        end_date: '2026-10-31',
+      });
+    });
+
+    it('ignores a range with one bound, which the backend would not apply', () => {
+      expect(scope('start_date=2026-10-01', 'species')).toEqual({ date: undefined });
+      expect(scope('end_date=2026-10-31', 'all')).toEqual({ date: today });
+    });
+
+    it('spans all dates for species and search lists without a date', () => {
+      expect(scope('', 'species').date).toBeUndefined();
+      expect(scope('', 'search').date).toBeUndefined();
+    });
+
+    it('defaults other lists to today', () => {
+      expect(scope('', 'all').date).toBe(today);
+      expect(scope('', 'hourly').date).toBe(today);
+    });
   });
 
   describe('buildHourlyDetectionUrl', () => {

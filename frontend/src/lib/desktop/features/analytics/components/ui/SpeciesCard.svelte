@@ -4,6 +4,8 @@
   import { formatDate } from '$lib/utils/formatters';
   import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
   import { handleBirdImageError } from '$lib/desktop/components/ui/image-utils';
+  import SpeciesLink from '$lib/desktop/components/ui/SpeciesLink.svelte';
+  import type { SpeciesDateRange } from '$lib/utils/detectionUrls';
 
   interface SpeciesData {
     common_name: string;
@@ -19,9 +21,10 @@
   interface Props {
     species: SpeciesData;
     className?: string;
+    range?: SpeciesDateRange;
   }
 
-  let { species, className = '' }: Props = $props();
+  let { species, className = '', range }: Props = $props();
 
   function formatPercentage(value: number): string {
     return (value * 100).toFixed(1) + '%';
@@ -30,7 +33,7 @@
   let displayName = $derived(localizeSpeciesName(species.scientific_name, species.common_name));
 </script>
 
-<div class={cn('card bg-[var(--color-base-200)]', className)}>
+<div class={cn('card relative bg-[var(--color-base-200)]', className)}>
   <figure class="px-4 pt-4">
     <div class="rounded-xl w-full aspect-[4/3] overflow-hidden bg-[var(--color-base-300)]">
       {#if species.thumbnail_url}
@@ -44,7 +47,14 @@
     </div>
   </figure>
   <div class="card-body p-4">
-    <h3 class="card-title text-base">{displayName}</h3>
+    <h3 class="card-title text-base">
+      <!-- The ::after overlay stretches this one link across the whole card. -->
+      <SpeciesLink
+        scientificName={species.scientific_name}
+        {range}
+        className="after:absolute after:inset-0">{displayName}</SpeciesLink
+      >
+    </h3>
     <p class="text-sm text-[var(--color-base-content)] opacity-60 italic">
       {species.scientific_name}
     </p>

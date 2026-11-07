@@ -21,6 +21,9 @@
   import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
   import { handleBirdImageError } from '$lib/desktop/components/ui/image-utils';
   import LoadingSpinner from '$lib/desktop/components/ui/LoadingSpinner.svelte';
+  import SpeciesLink from '$lib/desktop/components/ui/SpeciesLink.svelte';
+  import { handleAppLinkClick } from '$lib/stores/navigation.svelte';
+  import { buildDetectionDetailUrl } from '$lib/utils/detectionUrls';
   import SourceBadge from '$lib/desktop/features/dashboard/components/SourceBadge.svelte';
   import type { SourceInfo } from '$lib/types/detection.types';
 
@@ -646,7 +649,17 @@
                     ? 'bg-[var(--color-base-100)]'
                     : 'bg-[var(--color-base-200)]'}
                 >
-                  <td>{detection.timestamp ? formatDateTime(detection.timestamp) : '-'}</td>
+                  <td>
+                    {#if detection.timestamp}
+                      <a
+                        href={buildDetectionDetailUrl(detection.id)}
+                        class="hover:text-[var(--color-primary)] hover:underline"
+                        onclick={handleAppLinkClick}>{formatDateTime(detection.timestamp)}</a
+                      >
+                    {:else}
+                      -
+                    {/if}
+                  </td>
                   <td>
                     <div class="flex items-center gap-2">
                       <div class="w-8 h-8 rounded-full bg-[var(--color-base-200)] overflow-hidden">
@@ -666,8 +679,10 @@
                       </div>
                       <div>
                         <div class="font-medium">
-                          {localizeSpeciesName(detection.scientificName, detection.commonName) ||
-                            t('analytics.recentDetections.unknownSpecies')}
+                          <SpeciesLink scientificName={detection.scientificName}>
+                            {localizeSpeciesName(detection.scientificName, detection.commonName) ||
+                              t('analytics.recentDetections.unknownSpecies')}
+                          </SpeciesLink>
                         </div>
                         <div class="text-xs opacity-50">{detection.scientificName || ''}</div>
                       </div>

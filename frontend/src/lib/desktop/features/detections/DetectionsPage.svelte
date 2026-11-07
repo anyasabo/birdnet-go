@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from '$lib/i18n';
   import { fetchWithCSRF } from '$lib/utils/api';
   import type {
@@ -11,6 +11,7 @@
   import DetectionsCard from './components/DetectionsCard.svelte';
   import { getLogger } from '$lib/utils/logger';
   import { getLocalDateString } from '$lib/utils/date';
+  import { parseDetectionDateScope } from '$lib/utils/detectionUrls';
   import { navigation } from '$lib/stores/navigation.svelte';
 
   const logger = getLogger('app');
@@ -83,18 +84,13 @@
       }
     }
 
-    // Only default to today's date for non-search query types.
-    // For search queries, omitting the date allows searching across all dates.
-    // When date is included, the backend restricts results to that single day,
-    // which causes search to return no results for species detected on other days.
-    const date =
-      params.get('date')?.trim() || (queryType !== 'search' ? getLocalDateString() : undefined);
+    const dateScope = parseDetectionDateScope(params, queryType, getLocalDateString());
 
     const durationParam = params.get('duration');
 
     return {
       queryType,
-      date,
+      ...dateScope,
       hour: params.get('hour') || undefined,
       duration: durationParam ? parseInt(durationParam) : undefined,
       species: params.get('species') || undefined,
@@ -138,6 +134,9 @@
         notes: data.data || [],
         queryType: queryParams.queryType || 'all',
         date: queryParams.date?.trim() || getLocalDateString(),
+        filterDate: queryParams.date,
+        startDate: queryParams.start_date,
+        endDate: queryParams.end_date,
         hour: queryParams.hour ? parseInt(queryParams.hour) : undefined,
         duration: queryParams.duration,
         species: queryParams.species,
@@ -159,6 +158,25 @@
     }
   }
 
+  // The store's query string is the only fetch trigger, so links, back/forward and
+  // this page's own controls all refresh the list the same way.
+  const listPath = untrack(() => navigation.currentPath);
+  $effect(() => {
+    void navigation.currentSearch;
+    // Leaving the page changes the search too; that is not a query for this list.
+    if (navigation.currentPath === listPath) untrack(() => fetchDetections());
+  });
+
+  // Puts a new query in the URL, which refreshes the list through the effect above.
+  function applyQuery(params: URLSearchParams) {
+    const search = `?${params.toString()}`;
+    if (search === window.location.search) {
+      fetchDetections();
+    } else {
+      navigation.navigate(`${window.location.pathname}${search}`);
+    }
+  }
+
   // Handle page change
   function handlePageChange(newPage: number) {
     if (detectionsData) {
@@ -166,11 +184,7 @@
       const params = new URLSearchParams(window.location.search);
       params.set('offset', String(newOffset));
 
-      // Update URL without navigation
-      window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
-
-      // Fetch new data
-      fetchDetections();
+      applyQuery(params);
     }
   }
 
@@ -195,11 +209,7 @@
       params.set('numResults', String(newNumResults));
       params.set('offset', '0'); // Reset to first page
 
-      // Update URL without navigation
-      window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
-
-      // Fetch new data
-      fetchDetections();
+      applyQuery(params);
     }, 300); // 300ms debounce delay
   }
 
@@ -218,8 +228,7 @@
     }
     params.set('offset', '0'); // Reset to first page
 
-    window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
-    fetchDetections();
+    applyQuery(params);
   }
 
   // Handle details click
@@ -240,32 +249,16 @@
       params.delete('search');
     }
 
-    // Update URL without navigation
-    const url = new URL(window.location.href);
-    url.search = params.toString();
-    window.history.replaceState({}, '', url.toString());
-
-    // Refresh detections with new search
-    fetchDetections();
-  }
-
-  // Handle browser back/forward buttons
-  function handlePopState() {
-    fetchDetections();
+    const query = params.toString();
+    navigation.redirect(`${window.location.pathname}${query ? `?${query}` : ''}`);
   }
 
   onMount(() => {
-    fetchDetections();
-
     // Listen for search updates from SearchBox
     window.addEventListener('searchUpdate', handleSearchUpdate);
 
-    // Listen for browser navigation
-    window.addEventListener('popstate', handlePopState);
-
     return () => {
       window.removeEventListener('searchUpdate', handleSearchUpdate);
-      window.removeEventListener('popstate', handlePopState);
 
       // Clear any pending debounce timer
       if (debounceTimer) {

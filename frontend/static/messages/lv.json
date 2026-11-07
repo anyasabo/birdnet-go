@@ -885,6 +885,8 @@
       "hourly": "Stundu rezultāti plkst. {hour}:00, {date}",
       "hourlyRange": "Stundu rezultāti no {startHour}:00 līdz {endHour}:00, {date}",
       "species": "Rezultāti sugai {species}, {date}",
+      "speciesRange": "Rezultāti sugai {species}, {startDate} – {endDate}",
+      "speciesAllDates": "Visi sugas {species} novērojumi",
       "search": "Meklēšanas rezultāti vaicājumam \"{query}\"",
       "allDetections": "Visas atklāšanas datumā {date}"
     },

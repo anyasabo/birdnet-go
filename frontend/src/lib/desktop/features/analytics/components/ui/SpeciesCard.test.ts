@@ -26,6 +26,25 @@ const mockSpecies = {
   thumbnail_url: '/api/v2/media/image/Passer%20domesticus',
 };
 
+describe('SpeciesCard links', () => {
+  afterEach(cleanup);
+
+  it('links the species to its detections in the given range', () => {
+    const { getByRole } = render(SpeciesCard, {
+      props: {
+        species: mockSpecies,
+        range: { startDate: '2024-01-01', endDate: '2024-01-31' },
+      },
+    });
+
+    const params = new URL(getByRole('link').getAttribute('href') ?? '', 'http://localhost')
+      .searchParams;
+    expect(params.get('species')).toBe('Passer domesticus');
+    expect(params.get('start_date')).toBe('2024-01-01');
+    expect(params.get('end_date')).toBe('2024-01-31');
+  });
+});
+
 describe('SpeciesCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();

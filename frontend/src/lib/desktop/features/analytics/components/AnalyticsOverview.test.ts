@@ -41,6 +41,49 @@ const RANGE_B = makeParams('2024-02-01', '2024-02-07');
 const FRESH_SCIENTIFIC = 'Fresh-sci';
 const STALE_SCIENTIFIC = 'Stale-sci';
 
+describe('AnalyticsOverview recent detection links', () => {
+  afterEach(() => {
+    cleanup();
+    vi.mocked(api.get).mockReset();
+  });
+
+  function mockRecent(detection: Record<string, unknown>) {
+    vi.mocked(api.get).mockImplementation((url: string): Promise<unknown> => {
+      if (url.includes('/api/v2/detections/recent')) {
+        return Promise.resolve([{ id: '7', confidence: 0.9, ...detection }]);
+      }
+      if (url.includes('/api/v2/analytics/time/daily')) return Promise.resolve({ data: [] });
+      return Promise.resolve([]);
+    });
+  }
+
+  it('links the date to the detection and the name to the species', async () => {
+    mockRecent({
+      scientificName: 'Bubo virginianus',
+      commonName: 'Great Horned Owl',
+      timestamp: '2026-11-01T06:07:34-08:00',
+    });
+    const { container } = overviewTest.render({ params: RANGE_A });
+
+    await waitFor(() => {
+      expect(container.querySelector('a[href="/ui/detections/7"]')).not.toBeNull();
+    });
+    expect(
+      container.querySelector('a[href="/ui/detections?queryType=species&species=Bubo+virginianus"]')
+    ).not.toBeNull();
+  });
+
+  it('shows a dash without a link when the detection has no timestamp', async () => {
+    mockRecent({ scientificName: 'Bubo virginianus', commonName: 'Great Horned Owl' });
+    const { container } = overviewTest.render({ params: RANGE_A });
+
+    await waitFor(() => {
+      expect(container.querySelector('a[href*="queryType=species"]')).not.toBeNull();
+    });
+    expect(container.querySelector('a[href="/ui/detections/7"]')).toBeNull();
+  });
+});
+
 describe('AnalyticsOverview fetch-sequence race (#978)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -137,7 +137,7 @@ Lightweight connectivity check. Returns a minimal response with no database quer
 
 | Method | Route                         | Handler                   | Auth | Description                                                                                                                |
 | ------ | ----------------------------- | ------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/detections`                 | `GetDetections`           | ❌   | List bird detections; `source` (id from `/analytics/sources`, display name, node name or URI) restricts to an audio source |
+| GET    | `/detections`                 | `GetDetections`           | ❌   | List bird detections; `source` (id from `/analytics/sources`, display name, node name or URI) restricts to an audio source; `queryType=species` requires `species` and spans all dates without `date` or `start_date` + `end_date` |
 | GET    | `/detections/:id`             | `GetDetection`            | ❌   | Get specific detection                                                                                                     |
 | GET    | `/detections/recent`          | `GetRecentDetections`     | ❌   | Recent detections; `limit` defaults to 10 and is capped at 1000                                                            |
 | GET    | `/detections/:id/time-of-day` | `GetDetectionTimeOfDay`   | ❌   | Detection time context                                                                                                     |
@@ -150,7 +150,7 @@ Lightweight connectivity check. Returns a minimal response with no database quer
 | POST   | `/detections/batch/delete`    | `BatchDeleteDetections`   | ✅   | Bulk delete detections by ID                                                                                               |
 | POST   | `/detections/batch/review`    | `BatchReviewDetections`   | ✅   | Bulk set verification status                                                                                               |
 | POST   | `/detections/batch/lock`      | `BatchLockDetections`     | ✅   | Bulk lock or unlock detections                                                                                             |
-| POST   | `/detections/batch/resolve`   | `BatchResolveDetections`  | ✅   | Resolve query params to detection IDs                                                                                      |
+| POST   | `/detections/batch/resolve`   | `BatchResolveDetections`  | ✅   | Resolve a query to detection IDs; takes `date` or `startDate` + `endDate`, which must be set together                      |
 
 ### Integrations (`integrations/integrations.go`)
 

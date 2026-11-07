@@ -885,6 +885,8 @@
       "hourly": "Órási eredmények {date}-án {hour}:00-kor",
       "hourlyRange": "Órási eredmények {date}-án {startHour}:00 - {endHour}:00 között",
       "species": "{species} eredményei {date}-án",
+      "speciesRange": "{species} eredményei: {startDate} – {endDate}",
+      "speciesAllDates": "{species} összes észlelése",
       "search": "\"{query}\" keresési eredményei",
       "allDetections": "Összes észlelés {date}-án"
     },

@@ -885,6 +885,8 @@
       "hourly": "Wyniki Godzinowe dla {hour}:00 dnia {date}",
       "hourlyRange": "Wyniki Godzinowe od {startHour}:00 do {endHour}:00 dnia {date}",
       "species": "Wyniki dla {species} dnia {date}",
+      "speciesRange": "Wyniki dla {species} od {startDate} do {endDate}",
+      "speciesAllDates": "Wszystkie wykrycia gatunku {species}",
       "search": "Wyniki Wyszukiwania dla \"{query}\"",
       "allDetections": "Wszystkie Detekcje dla {date}"
     },

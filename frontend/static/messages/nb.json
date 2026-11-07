@@ -885,6 +885,8 @@
       "hourly": "Timeresultater for {hour}:00 den {date}",
       "hourlyRange": "Timeresultater fra {startHour}:00 til {endHour}:00 den {date}",
       "species": "Resultater for {species} den {date}",
+      "speciesRange": "Resultater for {species} fra {startDate} til {endDate}",
+      "speciesAllDates": "Alle deteksjoner av {species}",
       "search": "Søkeresultater for «{query}»",
       "allDetections": "Alle registreringer for {date}"
     },

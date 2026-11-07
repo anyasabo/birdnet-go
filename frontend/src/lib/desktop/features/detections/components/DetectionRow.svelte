@@ -39,7 +39,9 @@
   import type { Detection } from '$lib/types/detection.types';
   import { useImageDelayedLoading } from '$lib/utils/delayedLoading.svelte.js';
   import { loggers } from '$lib/utils/logger';
-  import { navigation } from '$lib/stores/navigation.svelte';
+  import { handleAppLinkClick, navigation } from '$lib/stores/navigation.svelte';
+  import { buildDetectionDetailUrl } from '$lib/utils/detectionUrls';
+  import SpeciesLink from '$lib/desktop/components/ui/SpeciesLink.svelte';
   import { buildAppUrl } from '$lib/utils/urlHelpers';
   import { downloadDetectionAudio } from '$lib/utils/audioDownload';
   import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
@@ -175,7 +177,11 @@
 
 <!-- Date & Time -->
 <td class="text-sm">
-  <span>{detection.date} {detection.time}</span>
+  <a
+    href={buildDetectionDetailUrl(detection.id)}
+    class="hover:text-[var(--color-primary)] hover:underline"
+    onclick={handleAppLinkClick}>{detection.date} {detection.time}</a
+  >
 </td>
 
 <!-- Weather Column -->
@@ -276,7 +282,11 @@
         >
           {displayName}
         </button>
-        <div class="sp-species-scientific-name">{detection.scientificName}</div>
+        <div class="sp-species-scientific-name">
+          <SpeciesLink scientificName={detection.scientificName}
+            >{detection.scientificName}</SpeciesLink
+          >
+        </div>
       </div>
     </div>
   </div>

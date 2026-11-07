@@ -885,6 +885,8 @@
       "hourly": "Hodinové výsledky pro {hour}:00 dne {date}",
       "hourlyRange": "Hodinové výsledky od {startHour}:00 do {endHour}:00 dne {date}",
       "species": "Výsledky pro druh {species} dne {date}",
+      "speciesRange": "Výsledky pro druh {species} od {startDate} do {endDate}",
+      "speciesAllDates": "Všechny detekce druhu {species}",
       "search": "Výsledky vyhledávání pro „{query}“",
       "allDetections": "Všechny detekce ze dne {date}"
     },

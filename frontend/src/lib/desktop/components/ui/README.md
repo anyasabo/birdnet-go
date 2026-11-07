@@ -113,6 +113,27 @@ interface Props {
 
 ---
 
+### SpeciesLink
+
+Links a species name to that species' detections. A real anchor, so open-in-new-tab and copy-link work, with SPA navigation on a plain click.
+
+#### Props
+
+| Prop             | Type                          | Default | Description                                                 |
+| ---------------- | ----------------------------- | ------- | ----------------------------------------------------------- |
+| `scientificName` | `string \| null \| undefined` | -       | Species to link to; the content renders unlinked when empty |
+| `range`          | `SpeciesDateRange`            | -       | Date scope; all dates unless both bounds are set            |
+| `className`      | `string`                      | `''`    | Additional CSS classes, also kept on the unlinked fallback  |
+| `children`       | `Snippet`                     | -       | Link content                                                |
+
+#### Usage
+
+```svelte
+<SpeciesLink scientificName="Bubo virginianus" range={{ startDate, endDate }}>
+  Great Horned Owl
+</SpeciesLink>
+```
+
 ### Card
 
 **File**: `Card.svelte`

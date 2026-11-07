@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -154,6 +155,52 @@ func TestGetDetections(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			expectedCount:  1,
+		},
+		{
+			name: "Species without a date spans all dates",
+			queryParams: map[string]string{
+				"queryType":  "species",
+				"species":    "Corvus brachyrhynchos",
+				"numResults": "10",
+				"offset":     "0",
+			},
+			mockSetup: func(m *mock.Mock) {
+				m.On("SearchNotesAdvanced", mock.MatchedBy(func(f *datastore.AdvancedSearchFilters) bool {
+					return slices.Equal(f.Species, []string{"Corvus brachyrhynchos"}) &&
+						f.DateRange == nil && f.TextQuery == ""
+				})).Return(mockNotes[:1], int64(1), nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectedCount:  1,
+		},
+		{
+			name: "Species date range",
+			queryParams: map[string]string{
+				"queryType":  "species",
+				"species":    "Corvus brachyrhynchos",
+				"start_date": "2025-03-01",
+				"end_date":   "2025-03-07",
+				"numResults": "10",
+				"offset":     "0",
+			},
+			mockSetup: func(m *mock.Mock) {
+				m.On("SearchNotesAdvanced", mock.MatchedBy(func(f *datastore.AdvancedSearchFilters) bool {
+					return slices.Equal(f.Species, []string{"Corvus brachyrhynchos"}) &&
+						f.DateRange != nil &&
+						f.DateRange.Start.Format(time.DateOnly) == "2025-03-01" &&
+						f.DateRange.End.Format(time.DateOnly) == "2025-03-07"
+				})).Return(mockNotes[:1], int64(1), nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectedCount:  1,
+		},
+		{
+			name: "Species query without a species is refused",
+			queryParams: map[string]string{
+				"queryType": "species",
+			},
+			mockSetup:      func(*mock.Mock) {},
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name: "Species detections",
